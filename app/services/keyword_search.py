@@ -1,3 +1,12 @@
+"""
+Keyword Search Service for MongoDB
+
+Provides text-based search capabilities using MongoDB text indexes.
+Integrates with the RAG pipeline for hybrid search.
+
+Phase 7: Keyword Search with MongoDB
+"""
+
 from app.database import Database
 from typing import List, Dict, Any, Optional
 import re
