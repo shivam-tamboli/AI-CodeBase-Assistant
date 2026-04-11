@@ -9,6 +9,7 @@ from app.services.llm_service import LLMService
 from app.services.processor import RepositoryProcessor
 from app.services.rag_pipeline import RAGPipeline
 from app.services.github_service import GitHubService
+from app.services.chat_service import ChatService
 
 __all__ = [
     "scan_directory",
@@ -23,4 +24,5 @@ __all__ = [
     "RepositoryProcessor",
     "RAGPipeline",
     "GitHubService",
+    "ChatService",
 ]
