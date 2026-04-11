@@ -6,6 +6,7 @@ Orchestrates the complete Retrieval Augmented Generation pipeline:
 - Query: Query → Search → Generate → Response
 
 Phase 10: End-to-End RAG Pipeline
+Phase 12: Added session/history support
 """
 
 import logging
@@ -15,6 +16,7 @@ from typing import Dict, Any, List, Optional
 from app.services.processor import RepositoryProcessor
 from app.services.hybrid_search import HybridSearchService
 from app.services.llm_service import LLMService
+from app.services.chat_service import ChatService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +39,7 @@ class RAGPipeline:
         self.processor = RepositoryProcessor()
         self.search_service = HybridSearchService()
         self.llm_service = LLMService()
+        self.chat_service = ChatService()
         logger.info("RAGPipeline initialized")
     
     async def ingest_repository(
@@ -98,7 +101,8 @@ class RAGPipeline:
         self,
         question: str,
         repository_id: str,
-        limit: int = 5
+        limit: int = 5,
+        session_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Query pipeline: Answer a question about the codebase.
@@ -109,6 +113,7 @@ class RAGPipeline:
             question: User's question
             repository_id: Repository to query
             limit: Number of code chunks to retrieve
+            session_id: Optional session ID for conversation history
             
         Returns:
             Answer with source citations
@@ -126,6 +131,15 @@ class RAGPipeline:
                     "sources": []
                 }
             
+            chat_history = []
+            if session_id:
+                logger.info(f"Fetching chat history for session: {session_id}")
+                chat_history = await self.chat_service.get_session_history(
+                    session_id, limit=10
+                )
+                if chat_history:
+                    logger.info(f"Using {len(chat_history)} previous messages for context")
+            
             logger.info(f"Stage 1/3: Performing hybrid search...")
             search_results = await self.search_service.hybrid_search(
                 question, repository_id, limit=limit
@@ -137,14 +151,15 @@ class RAGPipeline:
                     "status": "success",
                     "answer": "No relevant code found for your question. Try rephrasing or asking about a different aspect of the codebase.",
                     "sources": [],
-                    "chunks_found": 0
+                    "chunks_found": 0,
+                    "session_id": session_id
                 }
             
             logger.info(f"Stage 2/3: Found {len(search_results)} relevant chunks")
             
             logger.info(f"Stage 3/3: Generating answer with LLM...")
             llm_result = await self.llm_service.generate_answer(
-                question, search_results
+                question, search_results, chat_history=chat_history
             )
             
             elapsed = time.time() - start_time
@@ -167,7 +182,8 @@ class RAGPipeline:
                 "answer": llm_result.get("answer", ""),
                 "sources": sources,
                 "chunks_found": len(search_results),
-                "processing_time_seconds": round(elapsed, 2)
+                "processing_time_seconds": round(elapsed, 2),
+                "session_id": session_id
             }
             
         except Exception as e:
@@ -176,14 +192,16 @@ class RAGPipeline:
                 "status": "error",
                 "answer": f"Error processing your question: {str(e)}",
                 "sources": [],
-                "chunks_found": 0
+                "chunks_found": 0,
+                "session_id": session_id
             }
     
     async def query_with_streaming(
         self,
         question: str,
         repository_id: str,
-        limit: int = 5
+        limit: int = 5,
+        session_id: Optional[str] = None
     ):
         """
         Query pipeline with streaming response.
@@ -192,6 +210,7 @@ class RAGPipeline:
             question: User's question
             repository_id: Repository to query
             limit: Number of code chunks to retrieve
+            session_id: Optional session ID for conversation history
             
         Yields:
             Streaming response tokens
@@ -199,6 +218,12 @@ class RAGPipeline:
         logger.info(f"Starting streaming query for repository: {repository_id}")
         
         try:
+            chat_history = []
+            if session_id:
+                chat_history = await self.chat_service.get_session_history(
+                    session_id, limit=10
+                )
+            
             search_results = await self.search_service.hybrid_search(
                 question, repository_id, limit=limit
             )
@@ -212,7 +237,7 @@ class RAGPipeline:
                 return
             
             async for chunk in self.llm_service.generate_streaming_answer(
-                question, search_results
+                question, search_results, chat_history=chat_history
             ):
                 yield chunk
                 
