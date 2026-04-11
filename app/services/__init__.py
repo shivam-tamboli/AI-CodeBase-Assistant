@@ -8,6 +8,7 @@ from app.services.hybrid_search import HybridSearchService
 from app.services.llm_service import LLMService
 from app.services.processor import RepositoryProcessor
 from app.services.rag_pipeline import RAGPipeline
+from app.services.github_service import GitHubService
 
 __all__ = [
     "scan_directory",
@@ -21,4 +22,5 @@ __all__ = [
     "LLMService",
     "RepositoryProcessor",
     "RAGPipeline",
+    "GitHubService",
 ]
