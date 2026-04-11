@@ -1,5 +1,5 @@
 from openai import AsyncOpenAI, RateLimitError, APIError
-from typing import List, Dict, Any, AsyncIterator
+from typing import List, Dict, Any, AsyncIterator, Optional
 import os
 from dotenv import load_dotenv
 
@@ -8,6 +8,8 @@ load_dotenv()
 
 class LLMService:
     """Handles LLM interactions for answer generation"""
+
+    MAX_HISTORY_TOKENS = 2000
 
     def __init__(self):
         api_key = os.getenv("OPENAI_API_KEY")
@@ -41,7 +43,25 @@ class LLMService:
 
         return "\n".join(context_parts)
 
-    def _build_prompt(self, query: str, context: str) -> List[Dict[str, str]]:
+    def _format_history(self, history: List[Dict[str, Any]]) -> str:
+        """Format chat history for inclusion in prompt"""
+        if not history:
+            return ""
+
+        history_parts = []
+        for msg in history:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            history_parts.append(f"{role.upper()}: {content}")
+
+        return "\n\n".join(history_parts)
+
+    def _build_prompt(
+        self,
+        query: str,
+        context: str,
+        chat_history: Optional[List[Dict[str, Any]]] = None
+    ) -> List[Dict[str, str]]:
         """Build prompt with system and user messages"""
 
         system_prompt = """You are an expert code analyst specializing in understanding and explaining software codebases.
@@ -52,11 +72,22 @@ When answering questions:
 3. If the answer isn't in the context, clearly state that
 4. Provide clear, actionable explanations
 5. Use markdown formatting for readability
-6. Focus on explaining HOW the code works, not just WHAT it does"""
+6. Focus on explaining HOW the code works, not just WHAT it does
+7. Use conversation history to maintain context in multi-turn conversations"""
+
+        history_text = self._format_history(chat_history) if chat_history else ""
+
+        history_section = f"""
+Previous conversation:
+---
+{history_text}
+---
+
+""" if history_text else ""
 
         user_prompt = f"""Based on the following code context from the uploaded repository, answer the user's question.
 
-Context:
+{history_section}Context:
 ---
 {context}
 ---
@@ -73,7 +104,8 @@ Provide your answer with source citations in the format [filename:lines]. If the
     async def generate_answer(
         self,
         query: str,
-        retrieved_chunks: List[Dict[str, Any]]
+        retrieved_chunks: List[Dict[str, Any]],
+        chat_history: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Generate answer from retrieved context"""
 
@@ -85,7 +117,7 @@ Provide your answer with source citations in the format [filename:lines]. If the
 
         try:
             context = self._format_context(retrieved_chunks)
-            messages = self._build_prompt(query, context)
+            messages = self._build_prompt(query, context, chat_history)
 
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -136,7 +168,8 @@ Provide your answer with source citations in the format [filename:lines]. If the
     async def generate_streaming_answer(
         self,
         query: str,
-        retrieved_chunks: List[Dict[str, Any]]
+        retrieved_chunks: List[Dict[str, Any]],
+        chat_history: Optional[List[Dict[str, Any]]] = None
     ) -> AsyncIterator[Dict[str, Any]]:
         """Generate answer with streaming responses"""
 
@@ -145,6 +178,69 @@ Provide your answer with source citations in the format [filename:lines]. If the
                 "type": "done",
                 "answer": "No relevant code found for your question.",
                 "sources": []
+            }
+            return
+
+        try:
+            context = self._format_context(retrieved_chunks)
+            messages = self._build_prompt(query, context, chat_history)
+
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                stream=True
+            )
+
+            sources = []
+            for chunk in retrieved_chunks:
+                metadata = chunk.get("metadata", {})
+                sources.append({
+                    "file_path": metadata.get("file_path", ""),
+                    "start_line": metadata.get("start_line", 0),
+                    "end_line": metadata.get("end_line", 0),
+                    "chunk_type": metadata.get("chunk_type", "code"),
+                    "name": metadata.get("name", ""),
+                    "score": chunk.get("final_score", chunk.get("hybrid_score", 0))
+                })
+
+            full_answer = ""
+
+            async for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    full_answer += token
+                    yield {
+                        "type": "token",
+                        "token": token,
+                        "answer": full_answer
+                    }
+
+            yield {
+                "type": "done",
+                "answer": full_answer,
+                "sources": sources,
+                "chunks_used": len(retrieved_chunks)
+            }
+
+        except RateLimitError:
+            yield {
+                "type": "error",
+                "answer": "Rate limit reached. Please wait a moment and try again.",
+                "error": "rate_limit"
+            }
+        except APIError as e:
+            yield {
+                "type": "error",
+                "answer": f"API error occurred: {str(e)}",
+                "error": "api_error"
+            }
+        except Exception as e:
+            yield {
+                "type": "error",
+                "answer": f"Error: {str(e)}",
+                "error": "unknown"
             }
             return
 
