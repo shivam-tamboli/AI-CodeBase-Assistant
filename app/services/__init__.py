@@ -7,6 +7,7 @@ from app.services.keyword_search import KeywordSearchService
 from app.services.hybrid_search import HybridSearchService
 from app.services.llm_service import LLMService
 from app.services.processor import RepositoryProcessor
+from app.services.rag_pipeline import RAGPipeline
 
 __all__ = [
     "scan_directory",
@@ -19,4 +20,5 @@ __all__ = [
     "HybridSearchService",
     "LLMService",
     "RepositoryProcessor",
+    "RAGPipeline",
 ]
