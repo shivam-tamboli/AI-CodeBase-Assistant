@@ -1,7 +1,10 @@
 from app.database import Database
 from app.services.embedding import EmbeddingService
 from typing import List, Dict, Any, Optional
-import os
+import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStore:
@@ -12,26 +15,21 @@ class VectorStore:
         self.index_name = "vector_search_index"
     
     async def ensure_indexes(self):
-        """Create vector search index on code_chunks collection if it doesn't exist"""
+        """Create indexes on chunks collection"""
         db = Database.get_db()
         
         try:
-            existing_indexes = await db.code_chunks.list_indexes()
+            existing_indexes = db.chunks.list_indexes()
             existing_names = [idx.get("name") for idx in await existing_indexes.to_list(None)]
             
-            if self.index_name not in existing_names:
-                await db.code_chunks.create_index(
-                    [("embedding", "vectorSearchIndex")],
-                    vectorSearchIndex={
-                        "type": "cosine",
-                        "dimensions": 1536,
-                        "numCandidates": 100
-                    },
-                    name=self.index_name
-                )
-                print(f"Created vector search index: {self.index_name}")
-            else:
-                print(f"Vector search index already exists: {self.index_name}")
+            # Create repository_id index for filtering
+            if "repository_id_1" not in existing_names:
+                await db.chunks.create_index([("repository_id", 1)])
+                print("Created index: repository_id_1")
+            
+            # Vector search requires Atlas Vector Search (paid) - skip for free tier
+            # Using standard indexes for semantic search via $searchMeta or workaround
+            print("Using standard indexes (vector search requires Atlas paid tier)")
                 
         except Exception as e:
             print(f"Index creation warning: {e}")
@@ -71,7 +69,7 @@ class VectorStore:
             })
         
         if documents:
-            result = await db.code_chunks.insert_many(documents)
+            result = await db.chunks.insert_many(documents)
             return len(result.inserted_ids)
         
         return 0
@@ -82,7 +80,7 @@ class VectorStore:
         repository_id: str, 
         limit: int = 5
     ) -> List[Dict[str, Any]]:
-        """Search for similar code using vector similarity
+        """Search for similar code using cosine similarity
         
         Args:
             query: User query string
@@ -92,36 +90,59 @@ class VectorStore:
         Returns:
             List of relevant code chunks with scores
         """
+        print(f"[Semantic Search] Generating query embedding...")
         query_embedding = await self.embedding_service.generate_embedding(query)
         
         db = Database.get_db()
         
-        pipeline = [
-            {
-                "$vectorSearch": {
-                    "index": self.index_name,
-                    "path": "embedding",
-                    "queryVector": query_embedding,
-                    "numCandidates": 100,
-                    "limit": limit
-                }
-            },
-            {
-                "$match": {
-                    "repository_id": repository_id
-                }
-            },
-            {
-                "$project": {
-                    "content": 1,
-                    "metadata": 1,
-                    "score": {"$meta": "vectorSearchScore"}
-                }
-            }
-        ]
+        chunks = await db.chunks.find({"repository_id": repository_id}).to_list(100)
         
-        results = await db.code_chunks.aggregate(pipeline).to_list(limit)
-        return results
+        if not chunks:
+            return []
+        
+        print(f"[Semantic Search] Computing similarity for {len(chunks)} chunks...")
+        
+        scored_chunks = []
+        for chunk in chunks:
+            chunk_embedding = chunk.get("embedding")
+            if not chunk_embedding:
+                continue
+            
+            similarity = self._cosine_similarity(query_embedding, chunk_embedding)
+            scored_chunks.append({
+                **chunk,
+                "score": similarity
+            })
+        
+        scored_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+        
+        print(f"[Semantic Search] Found {len(scored_chunks)} results, returning top {limit}")
+        
+        return scored_chunks[:limit]
+    
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """Compute cosine similarity between two vectors
+        
+        Args:
+            vec1: First vector
+            vec2: Second vector
+            
+        Returns:
+            Cosine similarity score (0 to 1)
+        """
+        import numpy as np
+        
+        v1 = np.array(vec1)
+        v2 = np.array(vec2)
+        
+        dot_product = np.dot(v1, v2)
+        norm1 = np.linalg.norm(v1)
+        norm2 = np.linalg.norm(v2)
+        
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        
+        return float(dot_product / (norm1 * norm2))
     
     async def delete_by_repository(self, repository_id: str) -> int:
         """Delete all chunks for a repository
@@ -133,7 +154,7 @@ class VectorStore:
             Number of deleted documents
         """
         db = Database.get_db()
-        result = await db.code_chunks.delete_many({"repository_id": repository_id})
+        result = await db.chunks.delete_many({"repository_id": repository_id})
         return result.deleted_count
     
     async def count_chunks(self, repository_id: str) -> int:
@@ -146,7 +167,7 @@ class VectorStore:
             Number of chunks
         """
         db = Database.get_db()
-        return await db.code_chunks.count_documents({"repository_id": repository_id})
+        return await db.chunks.count_documents({"repository_id": repository_id})
     
     async def get_chunk(self, chunk_id: str) -> Optional[Dict[str, Any]]:
         """Get a single chunk by ID
@@ -162,7 +183,7 @@ class VectorStore:
         db = Database.get_db()
         
         try:
-            chunk = await db.code_chunks.find_one({"_id": ObjectId(chunk_id)})
+            chunk = await db.chunks.find_one({"_id": ObjectId(chunk_id)})
             if chunk:
                 chunk["id"] = str(chunk.pop("_id"))
             return chunk
