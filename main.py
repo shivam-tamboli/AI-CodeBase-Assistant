@@ -26,6 +26,17 @@ async def lifespan(app: FastAPI):
     await Database.connect(mongodb_uri)
     print("Connected to MongoDB")
     
+    from app.services.vector_store import VectorStore
+    from app.services.keyword_search import KeywordSearchService
+    
+    vector_store = VectorStore()
+    await vector_store.ensure_indexes()
+    
+    keyword_search = KeywordSearchService()
+    await keyword_search.ensure_indexes()
+    
+    print("Indexes initialized")
+    
     yield
     
     await Database.disconnect()
@@ -52,7 +63,9 @@ app.add_middleware(
 register_error_handlers(app)
 
 from app.api import repositories_router, chat_router
+from app.api.auth import router as auth_router
 
+app.include_router(auth_router)
 app.include_router(repositories_router)
 app.include_router(chat_router)
 
