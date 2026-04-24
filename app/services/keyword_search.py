@@ -19,15 +19,15 @@ class KeywordSearchService:
     METADATA_NAME_INDEX = "metadata_name_text_index"
     
     async def ensure_indexes(self):
-        """Create text indexes on code_chunks collection if they don't exist"""
+        """Create text indexes on chunks collection"""
         db = Database.get_db()
         
         try:
-            existing_indexes = await db.code_chunks.list_indexes()
+            existing_indexes = db.chunks.list_indexes()
             existing_names = [idx.get("name") for idx in await existing_indexes.to_list(None)]
             
             if self.CONTENT_INDEX_NAME not in existing_names:
-                await db.code_chunks.create_index(
+                await db.chunks.create_index(
                     [("content", "text")],
                     default_language="english",
                     name=self.CONTENT_INDEX_NAME
@@ -35,7 +35,7 @@ class KeywordSearchService:
                 print(f"Created text index: {self.CONTENT_INDEX_NAME}")
             
             if self.METADATA_NAME_INDEX not in existing_names:
-                await db.code_chunks.create_index(
+                await db.chunks.create_index(
                     [("metadata.name", "text")],
                     default_language="english",
                     name=self.METADATA_NAME_INDEX
@@ -95,7 +95,7 @@ class KeywordSearchService:
             }
         ]
         
-        results = await db.code_chunks.aggregate(pipeline).to_list(limit)
+        results = await db.chunks.aggregate(pipeline).to_list(limit)
         return results
     
     async def search_by_file_path(
@@ -134,7 +134,7 @@ class KeywordSearchService:
             }
         ]
         
-        results = await db.code_chunks.aggregate(pipeline).to_list(limit)
+        results = await db.chunks.aggregate(pipeline).to_list(limit)
         return results
     
     async def search_function_names(
@@ -169,7 +169,7 @@ class KeywordSearchService:
             }
         ]
         
-        results = await db.code_chunks.aggregate(pipeline).to_list(50)
+        results = await db.chunks.aggregate(pipeline).to_list(50)
         return results
     
     async def search_class_names(
@@ -204,7 +204,7 @@ class KeywordSearchService:
             }
         ]
         
-        results = await db.code_chunks.aggregate(pipeline).to_list(50)
+        results = await db.chunks.aggregate(pipeline).to_list(50)
         return results
     
     async def search_exact_phrase(
@@ -257,7 +257,7 @@ class KeywordSearchService:
             }
         ]
         
-        results = await db.code_chunks.aggregate(pipeline).to_list(limit)
+        results = await db.chunks.aggregate(pipeline).to_list(limit)
         return results
     
     def _sanitize_query(self, query: str) -> str:
@@ -312,5 +312,5 @@ class KeywordSearchService:
             }
         ]
         
-        results = await db.code_chunks.aggregate(pipeline).to_list(limit)
+        results = await db.chunks.aggregate(pipeline).to_list(limit)
         return [r["_id"] for r in results]

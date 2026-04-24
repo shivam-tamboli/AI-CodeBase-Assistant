@@ -8,6 +8,7 @@ class RepositoryBase(BaseModel):
     """Base model - shared fields for repository"""
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 class RepositoryCreate(RepositoryBase):
@@ -19,6 +20,7 @@ class RepositoryUpdate(BaseModel):
     """Model for updating a repository - all fields optional"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 class RepositoryResponse(RepositoryBase):

@@ -6,15 +6,22 @@ Endpoints for repository management.
 Phase 13: Added JWT authentication and authorization
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request
-from typing import List
+from fastapi import APIRouter, HTTPException, status, Depends, Request, UploadFile, File, Form
+from fastapi.responses import JSONResponse
+from typing import List, Optional
 from datetime import datetime
 from bson import ObjectId
+import zipfile
+import io
+import os
+import shutil
+import tempfile
 
 from app.database import Database
 from app.models.repository import RepositoryCreate, RepositoryResponse, RepositoryUpdate
 from app.auth.dependencies import get_current_user
 from app.middleware.rate_limiter import limiter
+from app.services.processor import RepositoryProcessor
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
@@ -127,6 +134,85 @@ async def create_repository(
     doc["id"] = str(result.inserted_id)
 
     return doc
+
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
+async def upload_repository(
+    request: Request,
+    file: UploadFile = File(...),
+    name: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    POST /repositories/upload - Upload repository as ZIP file
+    
+    Accepts a ZIP file containing code files.
+    Processes and indexes the uploaded code.
+    
+    Args:
+        file: ZIP file containing code
+        name: Repository name (optional, extracted from ZIP if not provided)
+        description: Repository description
+    
+    Returns:
+        Created repository with processing stats
+    
+    Requires authentication.
+    Rate limit: 10 requests per minute.
+    """
+    if not file.filename.endswith('.zip'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only ZIP files are accepted"
+        )
+    
+    db = Database.get_db()
+    user_id = current_user.get("user_id")
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        zip_path = os.path.join(temp_dir, file.filename)
+        
+        with open(zip_path, 'wb') as f:
+            shutil.copyfileobj(file.file, f)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        root_content = os.listdir(temp_dir)
+        subdirectory = None
+        extract_base = temp_dir
+        
+        if len(root_content) == 1 and os.path.isdir(os.path.join(temp_dir, root_content[0])):
+            subdirectory = root_content[0]
+            extract_base = os.path.join(temp_dir, subdirectory)
+        
+        repo_name = name or subdirectory or file.filename.replace('.zip', '')
+        
+        doc = {
+            "name": repo_name,
+            "description": description or "",
+            "user_id": user_id,
+            "file_path": extract_base,
+            "created_at": datetime.now(),
+            "updated_at": None
+        }
+        
+        result = await db.repositories.insert_one(doc)
+        repo_id = str(result.inserted_id)
+        
+        processor = RepositoryProcessor()
+        processing_result = await processor.process_repository(repo_id, extract_base)
+        
+        return {
+            "id": repo_id,
+            "name": doc["name"],
+            "description": doc["description"],
+            "created_at": doc["created_at"],
+            "updated_at": doc["updated_at"],
+            "processing": processing_result
+        }
 
 
 @router.put("/{repo_id}", response_model=RepositoryResponse)
