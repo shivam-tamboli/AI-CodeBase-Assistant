@@ -1,7 +1,7 @@
-from app.database import Database
-from app.services.file_scanner import scan_directory, get_file_content
-from app.services.chunker import CodeChunker
-from app.services.vector_store import VectorStore
+from backend.database import Database
+from backend.services.file_scanner import scan_directory, get_file_content
+from backend.services.chunker import CodeChunker
+from backend.services.vector_store import VectorStore
 from typing import Dict, Any, Optional
 import os
 from datetime import datetime
