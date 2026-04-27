@@ -6,6 +6,7 @@ const API_URL = 'http://localhost:8000'
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
+  const [isRegistering, setIsRegistering] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [repositories, setRepositories] = useState([])
@@ -26,6 +27,18 @@ function App() {
       fetchRepositories(newToken)
     } catch (err) {
       alert('Login failed: ' + (err.response?.data?.detail || err.message))
+    }
+  }
+
+  const register = async () => {
+    try {
+      const res = await axios.post(`${API_URL}/auth/register`, { username, password })
+      const newToken = res.data.access_token
+      setToken(newToken)
+      localStorage.setItem('token', newToken)
+      fetchRepositories(newToken)
+    } catch (err) {
+      alert('Registration failed: ' + (err.response?.data?.detail || err.message))
     }
   }
 
@@ -98,7 +111,7 @@ function App() {
         </header>
         <main>
           <div className="login-form">
-            <h2>Login</h2>
+            <h2>{isRegistering ? 'Register' : 'Login'}</h2>
             <input 
               type="text" 
               placeholder="Username" 
@@ -111,7 +124,21 @@ function App() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <button onClick={login}>Login</button>
+            <button 
+              onClick={isRegistering ? register : login}
+              disabled={!username || !password}
+            >
+              {isRegistering ? 'Register' : 'Login'}
+            </button>
+            <p className="toggle-auth">
+              {isRegistering ? 'Already have an account?' : "Don't have an account?"}
+              <button 
+                className="link-btn"
+                onClick={() => setIsRegistering(!isRegistering)}
+              >
+                {isRegistering ? ' Login' : ' Register'}
+              </button>
+            </p>
           </div>
         </main>
       </div>
