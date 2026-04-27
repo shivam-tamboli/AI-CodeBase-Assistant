@@ -2,7 +2,7 @@ import tiktoken
 from typing import List, Dict, Any, Optional
 import ast
 
-from app.services.ast_parser import parse_python_file
+from backend.services.ast_parser import parse_python_file
 
 
 class CodeChunker:
@@ -196,7 +196,7 @@ class CodeChunker:
         Returns:
             List of all chunks from all files
         """
-        from app.services.file_scanner import scan_directory, get_file_content
+        from backend.services.file_scanner import scan_directory, get_file_content
         
         all_chunks = []
         files = scan_directory(directory)

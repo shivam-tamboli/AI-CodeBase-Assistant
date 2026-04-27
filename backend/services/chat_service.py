@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from bson import ObjectId
 
-from app.database import Database
+from backend.database import Database
 
 logging.basicConfig(
     level=logging.INFO,
