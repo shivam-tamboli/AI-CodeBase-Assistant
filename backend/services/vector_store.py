@@ -1,5 +1,5 @@
-from app.database import Database
-from app.services.embedding import EmbeddingService
+from backend.database import Database
+from backend.services.embedding import EmbeddingService
 from typing import List, Dict, Any, Optional
 import numpy as np
 import logging

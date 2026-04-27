@@ -17,11 +17,11 @@ import os
 import shutil
 import tempfile
 
-from app.database import Database
-from app.models.repository import RepositoryCreate, RepositoryResponse, RepositoryUpdate
-from app.auth.dependencies import get_current_user
-from app.middleware.rate_limiter import limiter
-from app.services.processor import RepositoryProcessor
+from backend.database import Database
+from backend.models.repository import RepositoryCreate, RepositoryResponse, RepositoryUpdate
+from backend.auth.dependencies import get_current_user
+from backend.middleware.rate_limiter import limiter
+from backend.services.processor import RepositoryProcessor
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 

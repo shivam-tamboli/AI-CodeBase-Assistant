@@ -7,8 +7,8 @@ using Reciprocal Rank Fusion (RRF) algorithm.
 Phase 8: Hybrid Search Implementation
 """
 
-from app.services.vector_store import VectorStore
-from app.services.keyword_search import KeywordSearchService
+from backend.services.vector_store import VectorStore
+from backend.services.keyword_search import KeywordSearchService
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 import hashlib

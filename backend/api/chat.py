@@ -13,10 +13,10 @@ from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.services.chat_service import ChatService
-from app.services.rag_pipeline import RAGPipeline
-from app.auth.dependencies import get_current_user, get_optional_user
-from app.middleware.rate_limiter import limiter
+from backend.services.chat_service import ChatService
+from backend.services.rag_pipeline import RAGPipeline
+from backend.auth.dependencies import get_current_user, get_optional_user
+from backend.middleware.rate_limiter import limiter
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
