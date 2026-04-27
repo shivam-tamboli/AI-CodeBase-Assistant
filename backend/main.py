@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 
 load_dotenv()
 
-from app.database import Database
-from app.middleware.error_handlers import register_error_handlers
-from app.middleware.rate_limiter import limiter
+from backend.database import Database
+from backend.middleware.error_handlers import register_error_handlers
+from backend.middleware.rate_limiter import limiter
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -26,8 +26,12 @@ async def lifespan(app: FastAPI):
     await Database.connect(mongodb_uri)
     print("Connected to MongoDB")
     
-    from app.services.vector_store import VectorStore
-    from app.services.keyword_search import KeywordSearchService
+    db = Database.get_db()
+    await db.users.create_index("username", unique=True)
+    print("Users collection indexes initialized")
+    
+    from backend.services.vector_store import VectorStore
+    from backend.services.keyword_search import KeywordSearchService
     
     vector_store = VectorStore()
     await vector_store.ensure_indexes()
@@ -62,8 +66,8 @@ app.add_middleware(
 
 register_error_handlers(app)
 
-from app.api import repositories_router, chat_router
-from app.api.auth import router as auth_router
+from backend.api import repositories_router, chat_router
+from backend.api.auth import router as auth_router
 
 app.include_router(auth_router)
 app.include_router(repositories_router)
@@ -77,6 +81,15 @@ def root():
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
     """Health check for monitoring"""
-    return {"status": "healthy"}
+    try:
+        await Database.client.admin.command('ping')
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+    
+    return {
+        "status": "healthy" if db_status == "connected" else "unhealthy",
+        "database": db_status
+    }

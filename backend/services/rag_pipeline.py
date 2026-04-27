@@ -13,10 +13,10 @@ import logging
 import time
 from typing import Dict, Any, List, Optional
 
-from app.services.processor import RepositoryProcessor
-from app.services.hybrid_search import HybridSearchService
-from app.services.llm_service import LLMService
-from app.services.chat_service import ChatService
+from backend.services.processor import RepositoryProcessor
+from backend.services.hybrid_search import HybridSearchService
+from backend.services.llm_service import LLMService
+from backend.services.chat_service import ChatService
 
 logging.basicConfig(
     level=logging.INFO,

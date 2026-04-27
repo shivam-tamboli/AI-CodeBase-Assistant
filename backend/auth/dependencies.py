@@ -9,7 +9,7 @@ Phase 13: Production Ready
 from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.auth.jwt import verify_token
+from backend.auth.jwt import verify_token
 
 security = HTTPBearer(auto_error=False)
 

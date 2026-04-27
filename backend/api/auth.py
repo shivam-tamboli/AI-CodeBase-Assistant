@@ -10,8 +10,8 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from datetime import datetime
 from bson import ObjectId
-from app.database import Database
-from app.auth.jwt import create_access_token
+from backend.database import Database
+from backend.auth.jwt import create_access_token
 from passlib.context import CryptContext
 
 router = APIRouter(prefix="/auth", tags=["auth"])
