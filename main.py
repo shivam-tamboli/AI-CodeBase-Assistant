@@ -26,6 +26,10 @@ async def lifespan(app: FastAPI):
     await Database.connect(mongodb_uri)
     print("Connected to MongoDB")
     
+    db = Database.get_db()
+    await db.users.create_index("username", unique=True)
+    print("Users collection indexes initialized")
+    
     from app.services.vector_store import VectorStore
     from app.services.keyword_search import KeywordSearchService
     
@@ -77,6 +81,15 @@ def root():
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
     """Health check for monitoring"""
-    return {"status": "healthy"}
+    try:
+        await Database.client.admin.command('ping')
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+    
+    return {
+        "status": "healthy" if db_status == "connected" else "unhealthy",
+        "database": db_status
+    }
