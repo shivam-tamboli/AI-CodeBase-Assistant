@@ -21,46 +21,46 @@ Minimal full-stack RAG app that lets users upload a repository as ZIP, ask quest
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TB
   U[User]
-  FE[Frontend\nReact + Axios]
+  FE[Frontend<br/>React + Axios]
 
-  subgraph BE[Backend - FastAPI]
-    API[API Routes\nauth | repositories | chat | health]
-    AUTH[Auth Layer\nJWT + dependencies]
-    RL[Middleware\nRate Limiting + Error Handling]
+  subgraph BE["Backend - FastAPI"]
+    API["API Routes<br/>auth, repositories, chat, health"]
+    AUTH["Auth Layer<br/>JWT + dependencies"]
+    RL["Middleware<br/>Rate Limiting, Error Handling"]
 
-    subgraph SVC[Service Layer]
-      PROC[RepositoryProcessor\nscan -> chunk -> embed -> store]
-      HS[HybridSearchService\nsemantic + keyword + RRF]
-      LLM[LLMService\nprompt + generation]
-      CHAT[ChatService\nsession + history]
-      VS[VectorStore]
-      KS[KeywordSearchService]
+    subgraph SVC["Service Layer"]
+      PROC["RepositoryProcessor<br/>scan → chunk → embed → store"]
+      HS["HybridSearchService<br/>semantic + keyword + RRF"]
+      LLM["LLMService<br/>prompt + generation"]
+      CHAT["ChatService<br/>session + history"]
+      VS["VectorStore"]
+      KS["KeywordSearchService"]
     end
   end
 
-  DB[(MongoDB\nusers, repositories, chunks, chat_sessions)]
-  OA[OpenAI API\nembeddings + chat completions]
+  DB[(MongoDB<br/>users, repositories,<br/>chunks, chat_sessions)]
+  OA["OpenAI API<br/>embeddings + completions"]
 
-  U --> FE
-  FE --> API
-  API --> AUTH
-  API --> RL
-  API --> PROC
-  API --> HS
-  API --> CHAT
+  U -->|HTTP/JSON| FE
+  FE -->|API Calls| API
+  API -->|validate| AUTH
+  API -->|limit| RL
+  API -->|ingestion| PROC
+  API -->|retrieval| HS
+  API -->|persistence| CHAT
 
-  PROC --> VS
-  HS --> VS
-  HS --> KS
-  HS --> LLM
+  PROC -->|embed| VS
+  HS -->|semantic| VS
+  HS -->|keyword| KS
+  HS -->|context| LLM
 
-  VS --> DB
-  KS --> DB
-  CHAT --> DB
-  LLM --> OA
-  VS --> OA
+  VS -->|read/write| DB
+  KS -->|read/write| DB
+  CHAT -->|read/write| DB
+  LLM -->|call| OA
+  VS -->|embed| OA
 ```
 
 ### Architecture Notes
