@@ -24,6 +24,10 @@ function App() {
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadStatus, setUploadStatus] = useState('')
 
+  // Reindex state
+  const [reindexFile, setReindexFile] = useState(null)
+  const [reindexStatus, setReindexStatus] = useState('')
+
   // GitHub import state
   const [githubUrl, setGithubUrl] = useState('')
   const [importStatus, setImportStatus] = useState('')
@@ -145,6 +149,27 @@ function App() {
     }
   }
 
+  const handleReindex = async () => {
+    if (!reindexFile || !selectedRepo) return
+    setLoading(true)
+    setReindexStatus('Re-indexing...')
+    const formData = new FormData()
+    formData.append('file', reindexFile)
+    try {
+      const res = await axios.post(`${API_URL}/repositories/${selectedRepo}/reindex`, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
+      })
+      const { files_changed, files_removed, chunks_created } = res.data
+      setReindexStatus(`Done — ${files_changed} changed, ${files_removed} removed, ${chunks_created} new chunks`)
+      setReindexFile(null)
+    } catch (err) {
+      setReindexStatus('Failed: ' + (err.response?.data?.detail || err.message))
+    } finally {
+      setLoading(false)
+      setTimeout(() => setReindexStatus(''), 5000)
+    }
+  }
+
   // ── Sessions ──────────────────────────────────────────────────────────────
 
   const fetchSessions = async (repoId) => {
@@ -232,34 +257,62 @@ function App() {
     setQuestion('')
     setLoading(true)
 
-    // Optimistically add the user message to chat
-    setChatHistory(prev => [...prev, { role: 'user', content: userMessage, timestamp: new Date().toISOString() }])
+    // Add user message and an empty assistant placeholder
+    const assistantPlaceholder = { role: 'assistant', content: '', sources: [], timestamp: new Date().toISOString() }
+    setChatHistory(prev => [
+      ...prev,
+      { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
+      assistantPlaceholder
+    ])
 
     try {
-      const res = await axios.post(`${API_URL}/chat/query`, {
-        question: userMessage,
-        repository_id: selectedRepo,
-        session_id: sessionId,
-        limit: 5
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await fetch(`${API_URL}/chat/query/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ question: userMessage, repository_id: selectedRepo, session_id: sessionId, limit: 5 })
       })
 
-      const assistantMessage = {
-        role: 'assistant',
-        content: res.data.answer,
-        sources: res.data.sources,
-        chunks_found: res.data.chunks_found,
-        timestamp: new Date().toISOString()
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.detail || response.statusText)
       }
-      setChatHistory(prev => [...prev, assistantMessage])
-      fetchSessions(selectedRepo)
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()   // keep incomplete line for next iteration
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event = JSON.parse(line.slice(6))
+            if (event.type === 'token' || event.type === 'done') {
+              setChatHistory(prev => {
+                const updated = [...prev]
+                updated[updated.length - 1] = {
+                  ...updated[updated.length - 1],
+                  content: event.answer,
+                  sources: event.sources || updated[updated.length - 1].sources
+                }
+                return updated
+              })
+            }
+            if (event.type === 'done') fetchSessions(selectedRepo)
+          } catch { /* malformed line — skip */ }
+        }
+      }
     } catch (err) {
-      setChatHistory(prev => [...prev, {
-        role: 'assistant',
-        content: 'Error: ' + (err.response?.data?.detail || err.message),
-        timestamp: new Date().toISOString()
-      }])
+      setChatHistory(prev => {
+        const updated = [...prev]
+        updated[updated.length - 1] = { ...updated[updated.length - 1], content: 'Error: ' + err.message }
+        return updated
+      })
     } finally {
       setLoading(false)
     }
@@ -380,6 +433,22 @@ function App() {
               ))}
             </select>
           </section>
+
+          {selectedRepo && (
+            <section className="upload-section">
+              <h2>Re-index Repository</h2>
+              <div className="upload-form">
+                <input
+                  type="file"
+                  accept=".zip"
+                  onChange={(e) => setReindexFile(e.target.files[0])}
+                />
+                <button onClick={handleReindex} disabled={loading || !reindexFile}>
+                  {reindexStatus || 'Re-index ZIP'}
+                </button>
+              </div>
+            </section>
+          )}
 
           {selectedRepo && (
             <section className="sessions-section">
