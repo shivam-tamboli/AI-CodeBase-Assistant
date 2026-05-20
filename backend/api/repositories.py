@@ -222,6 +222,64 @@ async def upload_repository(
         }
 
 
+@router.post("/{repo_id}/reindex", status_code=status.HTTP_200_OK)
+@limiter.limit("5/minute")
+async def reindex_repository(
+    request: Request,
+    repo_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Re-index a repository from a new ZIP, updating only changed files.
+
+    Computes MD5 content hashes and skips files whose hash matches the
+    stored value. Only changed and new files are re-embedded; chunks for
+    removed files are deleted. Rate limit: 5 requests per minute.
+    """
+    if not file.filename.endswith(".zip"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only ZIP files are accepted"
+        )
+
+    db = Database.get_db()
+    user_id = current_user.get("user_id")
+
+    try:
+        repo = await db.repositories.find_one({"_id": ObjectId(repo_id)})
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid repository ID format")
+
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repo_id}' not found")
+
+    if repo.get("user_id") and repo["user_id"] != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this repository")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        zip_path = os.path.join(temp_dir, file.filename)
+        with open(zip_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(temp_dir)
+
+        root_content = os.listdir(temp_dir)
+        extract_base = temp_dir
+        if len(root_content) == 1 and os.path.isdir(os.path.join(temp_dir, root_content[0])):
+            extract_base = os.path.join(temp_dir, root_content[0])
+
+        processor = RepositoryProcessor()
+        result = await processor.process_repository_incremental(repo_id, extract_base)
+
+    await db.repositories.update_one(
+        {"_id": ObjectId(repo_id)},
+        {"$set": {"updated_at": datetime.now()}}
+    )
+
+    return {"repository_id": repo_id, **result}
+
+
 @router.put("/{repo_id}", response_model=RepositoryResponse)
 @limiter.limit("20/minute")
 async def update_repository(
