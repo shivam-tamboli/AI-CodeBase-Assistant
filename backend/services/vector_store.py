@@ -60,7 +60,8 @@ class VectorStore:
                     "name": chunk.get("name", ""),
                     "start_line": chunk.get("start_line", 0),
                     "end_line": chunk.get("end_line", 0),
-                    "token_count": chunk.get("token_count", 0)
+                    "token_count": chunk.get("token_count", 0),
+                    "file_hash": chunk.get("file_hash", "")
                 }
             })
 
