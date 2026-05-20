@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 import ast
 
 from backend.services.ast_parser import parse_python_file
+from backend.services import treesitter_parser
 
 
 class CodeChunker:
@@ -187,6 +188,103 @@ class CodeChunker:
         
         return pieces
     
+    def chunk_file_multilang(
+        self, source: str, file_path: str = "", language: str = "python"
+    ) -> List[Dict[str, Any]]:
+        """Chunk any supported language file using AST where possible.
+
+        Dispatch order:
+          1. Python  → existing `chunk_file` (Python ast module)
+          2. Other   → tree-sitter AST; same chunk assembly as Python path
+          3. Fallback → line-based chunking when tree-sitter is unavailable
+        """
+        if language == "python":
+            return self.chunk_file(source, file_path)
+
+        parsed = treesitter_parser.parse_file(source, language)
+        if parsed is not None:
+            return self._chunks_from_parsed(source, file_path, parsed)
+
+        # Tree-sitter not available for this language — use line-based chunking
+        return self._chunk_by_lines(source, file_path)
+
+    def _chunks_from_parsed(
+        self, source: str, file_path: str, parsed: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Assemble chunks from a treesitter_parser result dict."""
+        chunks = []
+
+        for func in parsed.get("functions", []):
+            func_source = self._extract_lines(source, func["line_start"], func["line_end"])
+            chunks.append(self._create_chunk(
+                content=func_source,
+                chunk_type="function",
+                name=func["name"],
+                start_line=func["line_start"],
+                end_line=func["line_end"],
+                file_path=file_path,
+            ))
+
+        for cls in parsed.get("classes", []):
+            cls_source = self._extract_lines(source, cls["line_start"], cls["line_end"])
+            chunks.append(self._create_chunk(
+                content=cls_source,
+                chunk_type="class",
+                name=cls["name"],
+                start_line=cls["line_start"],
+                end_line=cls["line_end"],
+                file_path=file_path,
+            ))
+
+        if not chunks:
+            # No functions/classes found — chunk the whole file by lines
+            return self._chunk_by_lines(source, file_path)
+
+        return self._split_large_chunks(chunks)
+
+    def _chunk_by_lines(self, source: str, file_path: str) -> List[Dict[str, Any]]:
+        """Sliding-window line-based chunking for files without AST support."""
+        if not source or not source.strip():
+            return []
+
+        lines = source.split("\n")
+        chunks = []
+        current_lines: List[str] = []
+        current_tokens = 0
+        start_line = 1
+
+        for i, line in enumerate(lines, 1):
+            line_tokens = self.count_tokens(line + "\n")
+
+            if current_tokens + line_tokens > self.max_tokens and current_lines:
+                chunks.append(self._create_chunk(
+                    content="\n".join(current_lines),
+                    chunk_type="code",
+                    name="",
+                    start_line=start_line,
+                    end_line=i - 1,
+                    file_path=file_path,
+                ))
+                overlap = current_lines[-self.overlap:] if self.overlap < len(current_lines) else []
+                current_lines = overlap + [line]
+                current_tokens = self.count_tokens("\n".join(current_lines))
+                start_line = i - len(overlap)
+            else:
+                current_lines.append(line)
+                current_tokens += line_tokens
+
+        if current_lines:
+            chunks.append(self._create_chunk(
+                content="\n".join(current_lines),
+                chunk_type="code",
+                name="",
+                start_line=start_line,
+                end_line=len(lines),
+                file_path=file_path,
+            ))
+
+        return chunks
+
     def chunk_directory(self, directory: str) -> List[Dict[str, Any]]:
         """Chunk all Python files in a directory
         
@@ -202,12 +300,11 @@ class CodeChunker:
         files = scan_directory(directory)
         
         for file_info in files:
-            if file_info["language"] != "python":
-                continue
-            
             content = get_file_content(file_info["path"])
             if content:
-                chunks = self.chunk_file(content, file_info["relative_path"])
+                chunks = self.chunk_file_multilang(
+                    content, file_info["relative_path"], file_info["language"]
+                )
                 for chunk in chunks:
                     chunk["repository_id"] = ""
                 all_chunks.extend(chunks)
