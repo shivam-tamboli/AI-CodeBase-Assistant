@@ -16,6 +16,13 @@ class RepositoryCreate(RepositoryBase):
     pass
 
 
+class RepositoryImport(BaseModel):
+    """Model for importing a repository from a GitHub URL"""
+    url: str = Field(..., description="Public GitHub repository URL")
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+
+
 class RepositoryUpdate(BaseModel):
     """Model for updating a repository - all fields optional"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
