@@ -1,17 +1,12 @@
-"""
-Hybrid Search Service
-
-Combines semantic search (vector similarity) and keyword search (exact matching)
-using Reciprocal Rank Fusion (RRF) algorithm.
-
-Phase 8: Hybrid Search Implementation
-"""
-
 from backend.services.vector_store import VectorStore
 from backend.services.keyword_search import KeywordSearchService
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 import hashlib
+import logging
+import os
+
+logger = logging.getLogger(__name__)
 
 
 class HybridSearchService:
@@ -52,9 +47,13 @@ class HybridSearchService:
         )
         
         combined = self._reciprocal_rank_fusion(semantic_results, keyword_results)
-        
-        reranked = self._rerank(combined, query)
-        
+
+        try:
+            reranked = await self._cohere_rerank(combined, query, limit)
+        except Exception as e:
+            logger.warning("Cohere rerank unavailable (%s), using heuristic rerank", e)
+            reranked = self._rerank(combined, query)
+
         return reranked[:limit]
     
     def _reciprocal_rank_fusion(
@@ -105,6 +104,44 @@ class HybridSearchService:
         
         return results
     
+    async def _cohere_rerank(
+        self,
+        results: List[Dict],
+        query: str,
+        limit: int
+    ) -> List[Dict]:
+        """Re-rank RRF results using the Cohere cross-encoder.
+
+        Reads query + chunk content together (cross-encoder) rather than
+        relying on rank positions alone. Requires COHERE_API_KEY env var.
+        Raises if key is absent or the API call fails, so callers can fall back.
+        """
+        api_key = os.getenv("COHERE_API_KEY")
+        if not api_key:
+            raise ValueError("COHERE_API_KEY not configured")
+
+        import cohere
+        co = cohere.AsyncClientV2(api_key)
+
+        docs = [r.get("content", "") for r in results]
+        top_n = min(limit, len(docs))
+
+        response = await co.rerank(
+            model="rerank-english-v3.0",
+            query=query,
+            documents=docs,
+            top_n=top_n
+        )
+
+        reranked = []
+        for r in response.results:
+            doc = results[r.index].copy()
+            doc["rerank_score"] = r.relevance_score
+            doc["hybrid_score"] = r.relevance_score
+            reranked.append(doc)
+
+        return reranked
+
     def _get_doc_id(self, doc: Dict) -> str:
         """Generate unique ID for a document
         
