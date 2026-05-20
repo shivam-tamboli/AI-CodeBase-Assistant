@@ -17,7 +17,7 @@ class LLMService:
             raise ValueError("OPENAI_API_KEY not set in environment variables")
 
         self.client = AsyncOpenAI(api_key=api_key)
-        self.model = os.getenv("LLM_MODEL", "gpt-4")
+        self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
         self.temperature = 0.2
         self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2000"))
 
