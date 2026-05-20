@@ -421,3 +421,43 @@ async def search_symbols(
         "count": len(symbols),
         "symbols": symbols
     }
+
+
+@router.get("/{repo_id}/stats")
+@limiter.limit("60/minute")
+async def get_repository_stats(
+    request: Request,
+    repo_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    db = Database.get_db()
+    user_id = current_user.get("user_id")
+
+    try:
+        repo = await db.repositories.find_one({"_id": ObjectId(repo_id)})
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid repository ID format"
+        )
+
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository with id '{repo_id}' not found"
+        )
+
+    if repo.get("user_id") and repo["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this repository"
+        )
+
+    processor = RepositoryProcessor()
+    stats = await processor.get_repository_stats(repo_id)
+
+    return {
+        "repository_id": repo_id,
+        "chunk_count": stats.get("chunk_count", 0),
+        "indexed": stats.get("indexed", False)
+    }

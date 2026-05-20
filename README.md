@@ -207,7 +207,7 @@ npm run dev
 | `MONGODB_URI` | Yes | MongoDB Atlas connection string |
 | `JWT_SECRET` | Yes | Any long random string (change before deploying!) |
 | `ALLOWED_ORIGINS` | No | Comma-separated CORS origins (default: localhost:3000) |
-| `LLM_MODEL` | No | GPT model (default: `gpt-4`, use `gpt-4o-mini` to save cost) |
+| `LLM_MODEL` | No | OpenAI model name (default: `gpt-4o-mini`; set `gpt-4o` or `gpt-4` for higher capability) |
 | `LLM_MAX_TOKENS` | No | Max response tokens (default: 2000) |
 
 ---
