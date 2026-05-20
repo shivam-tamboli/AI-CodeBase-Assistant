@@ -95,7 +95,7 @@ class VectorStore:
         
         db = Database.get_db()
         
-        chunks = await db.chunks.find({"repository_id": repository_id}).to_list(100)
+        chunks = await db.chunks.find({"repository_id": repository_id}).to_list(None)
         
         if not chunks:
             return []
