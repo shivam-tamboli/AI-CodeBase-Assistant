@@ -101,6 +101,38 @@ Provide your answer with source citations in the format [filename:lines]. If the
             {"role": "user", "content": user_prompt}
         ]
 
+    def _validate_citations(
+        self,
+        answer: str,
+        retrieved_chunks: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Validate that file paths cited in the answer exist in retrieved chunks.
+
+        Extracts all .py paths from the answer text and checks each against
+        the file_path metadata of the chunks that were actually retrieved.
+        Returns a dict with citation_valid flag and list of unverified paths.
+        """
+        import re
+
+        cited_files = set(re.findall(r'[\w/._-]+\.py', answer))
+
+        source_paths = {
+            chunk.get("metadata", {}).get("file_path", "")
+            for chunk in retrieved_chunks
+        }
+        source_basenames = {fp.split("/")[-1] for fp in source_paths if fp}
+
+        hallucinated = [
+            f for f in cited_files
+            if f not in source_paths and f.split("/")[-1] not in source_basenames
+        ]
+
+        return {
+            "cited_files": sorted(cited_files),
+            "hallucinated_files": hallucinated,
+            "citation_valid": len(hallucinated) == 0
+        }
+
     async def generate_answer(
         self,
         query: str,
@@ -128,6 +160,14 @@ Provide your answer with source citations in the format [filename:lines]. If the
 
             answer = response.choices[0].message.content
 
+            citation_check = self._validate_citations(answer, retrieved_chunks)
+            if citation_check["hallucinated_files"]:
+                unverified = ", ".join(f"`{f}`" for f in citation_check["hallucinated_files"])
+                answer += (
+                    f"\n\n> **Note**: The following file references could not be "
+                    f"verified against the indexed source: {unverified}"
+                )
+
             sources = []
             for chunk in retrieved_chunks:
                 metadata = chunk.get("metadata", {})
@@ -143,7 +183,9 @@ Provide your answer with source citations in the format [filename:lines]. If the
             return {
                 "answer": answer,
                 "sources": sources,
-                "chunks_used": len(retrieved_chunks)
+                "chunks_used": len(retrieved_chunks),
+                "citation_valid": citation_check["citation_valid"],
+                "citation_warnings": citation_check["hallucinated_files"]
             }
 
         except RateLimitError:
