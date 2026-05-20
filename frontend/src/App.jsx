@@ -24,6 +24,10 @@ function App() {
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadStatus, setUploadStatus] = useState('')
 
+  // GitHub import state
+  const [githubUrl, setGithubUrl] = useState('')
+  const [importStatus, setImportStatus] = useState('')
+
   // Chat state
   const [question, setQuestion] = useState('')
   const [loading, setLoading] = useState(false)
@@ -118,6 +122,26 @@ function App() {
     } finally {
       setLoading(false)
       setTimeout(() => setUploadStatus(''), 4000)
+    }
+  }
+
+  const handleGitHubImport = async () => {
+    if (!githubUrl.trim()) return
+    setLoading(true)
+    setImportStatus('Cloning and indexing...')
+    try {
+      await axios.post(`${API_URL}/repositories/import`,
+        { url: githubUrl.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setImportStatus('Done! Repository indexed.')
+      setGithubUrl('')
+      fetchRepositories(token)
+    } catch (err) {
+      setImportStatus('Import failed: ' + (err.response?.data?.detail || err.message))
+    } finally {
+      setLoading(false)
+      setTimeout(() => setImportStatus(''), 5000)
     }
   }
 
@@ -323,6 +347,22 @@ function App() {
               />
               <button onClick={handleUpload} disabled={loading || !uploadFile}>
                 {uploadStatus || 'Upload ZIP'}
+              </button>
+            </div>
+          </section>
+
+          <section className="upload-section">
+            <h2>Import from GitHub</h2>
+            <div className="upload-form">
+              <input
+                type="url"
+                placeholder="https://github.com/owner/repo"
+                value={githubUrl}
+                onChange={(e) => setGithubUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleGitHubImport()}
+              />
+              <button onClick={handleGitHubImport} disabled={loading || !githubUrl.trim()}>
+                {importStatus || 'Import'}
               </button>
             </div>
           </section>

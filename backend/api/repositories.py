@@ -17,12 +17,18 @@ import os
 import shutil
 import tempfile
 
+import asyncio
+import logging
+import re
+
 from backend.database import Database
-from backend.models.repository import RepositoryCreate, RepositoryResponse, RepositoryUpdate
+from backend.models.repository import RepositoryCreate, RepositoryImport, RepositoryResponse, RepositoryUpdate
 from backend.auth.dependencies import get_current_user
 from backend.middleware.rate_limiter import limiter
 from backend.services.processor import RepositoryProcessor
 from backend.services.keyword_search import KeywordSearchService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
@@ -460,4 +466,98 @@ async def get_repository_stats(
         "repository_id": repo_id,
         "chunk_count": stats.get("chunk_count", 0),
         "indexed": stats.get("indexed", False)
+    }
+
+
+_GITHUB_URL_RE = re.compile(
+    r'^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?$'
+)
+
+
+@router.post("/import", status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
+async def import_repository(
+    request: Request,
+    payload: RepositoryImport,
+    current_user: dict = Depends(get_current_user)
+):
+    """Clone a public GitHub repository and index it.
+
+    Accepts a GitHub HTTPS URL, clones with depth=1 into a temporary
+    directory, runs the standard RepositoryProcessor pipeline, then
+    cleans up the clone. Private repositories are not supported without
+    a configured GitHub token.
+
+    Rate limit: 5 requests per minute (clone is network-bound).
+    """
+    url = payload.url.strip().rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+
+    if not _GITHUB_URL_RE.match(url + "/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="URL must be a public GitHub repository (https://github.com/owner/repo)"
+        )
+
+    repo_slug = url.split("/")[-1]
+    repo_name = payload.name or repo_slug
+    db = Database.get_db()
+    user_id = current_user.get("user_id")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        clone_path = os.path.join(temp_dir, repo_slug)
+
+        proc = await asyncio.create_subprocess_exec(
+            "git", "clone", "--depth", "1", url, clone_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Clone timed out after 120 seconds"
+            )
+
+        if proc.returncode != 0:
+            error_msg = stderr.decode(errors="replace").strip()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Clone failed: {error_msg}"
+            )
+
+        doc = {
+            "name": repo_name,
+            "description": payload.description or f"Imported from {url}",
+            "user_id": user_id,
+            "source_url": url,
+            "created_at": datetime.now(),
+            "updated_at": None
+        }
+
+        result = await db.repositories.insert_one(doc)
+        repo_id = str(result.inserted_id)
+
+        try:
+            processor = RepositoryProcessor()
+            processing_result = await processor.process_repository(repo_id, clone_path)
+        except Exception as exc:
+            await db.repositories.delete_one({"_id": result.inserted_id})
+            logger.error("Processing failed for import %s: %s", url, exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Indexing failed: {exc}"
+            )
+
+    return {
+        "id": repo_id,
+        "name": repo_name,
+        "description": doc["description"],
+        "source_url": url,
+        "created_at": doc["created_at"],
+        "updated_at": None,
+        "processing": processing_result
     }
