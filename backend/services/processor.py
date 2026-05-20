@@ -39,12 +39,11 @@ class RepositoryProcessor:
         all_chunks = []
         
         for file_info in files:
-            if file_info["language"] != "python":
-                continue
-            
             content = get_file_content(file_info["path"])
             if content:
-                chunks = self.chunker.chunk_file(content, file_info["relative_path"])
+                chunks = self.chunker.chunk_file_multilang(
+                    content, file_info["relative_path"], file_info["language"]
+                )
                 all_chunks.extend(chunks)
         
         if not all_chunks:

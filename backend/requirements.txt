@@ -12,6 +12,13 @@ bcrypt==4.0.1
 slowapi==0.1.9
 numpy==2.2.2
 cohere>=5.0.0
+tree-sitter>=0.21.0
+tree-sitter-python
+tree-sitter-javascript
+tree-sitter-typescript
+tree-sitter-go
+tree-sitter-java
+tree-sitter-rust
 
 # Testing
 pytest==7.4.4
