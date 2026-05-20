@@ -15,33 +15,24 @@ import re
 class KeywordSearchService:
     """Handles keyword-based search in MongoDB using text indexes"""
     
-    CONTENT_INDEX_NAME = "content_text_index"
-    METADATA_NAME_INDEX = "metadata_name_text_index"
-    
+    COMBINED_TEXT_INDEX_NAME = "content_name_text_index"
+
     async def ensure_indexes(self):
         """Create text indexes on chunks collection"""
         db = Database.get_db()
-        
+
         try:
             existing_indexes = db.chunks.list_indexes()
             existing_names = [idx.get("name") for idx in await existing_indexes.to_list(None)]
-            
-            if self.CONTENT_INDEX_NAME not in existing_names:
+
+            if self.COMBINED_TEXT_INDEX_NAME not in existing_names:
                 await db.chunks.create_index(
-                    [("content", "text")],
+                    [("content", "text"), ("metadata.name", "text")],
                     default_language="english",
-                    name=self.CONTENT_INDEX_NAME
+                    name=self.COMBINED_TEXT_INDEX_NAME
                 )
-                print(f"Created text index: {self.CONTENT_INDEX_NAME}")
-            
-            if self.METADATA_NAME_INDEX not in existing_names:
-                await db.chunks.create_index(
-                    [("metadata.name", "text")],
-                    default_language="english",
-                    name=self.METADATA_NAME_INDEX
-                )
-                print(f"Created text index: {self.METADATA_NAME_INDEX}")
-                
+                print(f"Created compound text index: {self.COMBINED_TEXT_INDEX_NAME}")
+
         except Exception as e:
             print(f"Index creation warning: {e}")
     

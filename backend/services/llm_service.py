@@ -242,69 +242,6 @@ Provide your answer with source citations in the format [filename:lines]. If the
                 "answer": f"Error: {str(e)}",
                 "error": "unknown"
             }
-            return
-
-        try:
-            context = self._format_context(retrieved_chunks)
-            messages = self._build_prompt(query, context)
-
-            stream = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                stream=True
-            )
-
-            sources = []
-            for chunk in retrieved_chunks:
-                metadata = chunk.get("metadata", {})
-                sources.append({
-                    "file_path": metadata.get("file_path", ""),
-                    "start_line": metadata.get("start_line", 0),
-                    "end_line": metadata.get("end_line", 0),
-                    "chunk_type": metadata.get("chunk_type", "code"),
-                    "name": metadata.get("name", ""),
-                    "score": chunk.get("final_score", chunk.get("hybrid_score", 0))
-                })
-
-            full_answer = ""
-
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
-                    full_answer += token
-                    yield {
-                        "type": "token",
-                        "token": token,
-                        "answer": full_answer
-                    }
-
-            yield {
-                "type": "done",
-                "answer": full_answer,
-                "sources": sources,
-                "chunks_used": len(retrieved_chunks)
-            }
-
-        except RateLimitError:
-            yield {
-                "type": "error",
-                "answer": "Rate limit reached. Please wait a moment and try again.",
-                "error": "rate_limit"
-            }
-        except APIError as e:
-            yield {
-                "type": "error",
-                "answer": f"API error occurred: {str(e)}",
-                "error": "api_error"
-            }
-        except Exception as e:
-            yield {
-                "type": "error",
-                "answer": f"Error generating answer: {str(e)}",
-                "error": "unknown"
-            }
 
     async def count_tokens(self, text: str) -> int:
         """Count tokens in text using tiktoken"""
