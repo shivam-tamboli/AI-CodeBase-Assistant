@@ -8,10 +8,12 @@ Phase 13: Added JWT authentication and rate limiting
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi.responses import StreamingResponse
 from typing import Optional, List
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+import json
 
 from backend.services.chat_service import ChatService
 from backend.services.rag_pipeline import RAGPipeline
@@ -283,6 +285,57 @@ async def chat_query(
         "session_id": session_id,
         "status": result.get("status", "unknown")
     }
+
+
+@router.post("/query/stream")
+@limiter.limit("10/minute")
+async def chat_query_stream(
+    request: Request,
+    chat_request: ChatQueryRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """POST /chat/query/stream — SSE streaming answer.
+
+    Streams LLM tokens as Server-Sent Events. Each event is a JSON object:
+      {"type": "token", "token": "...", "answer": "<accumulated>"}
+      {"type": "done",  "answer": "<full>", "sources": [...], "chunks_used": N}
+      {"type": "error", "answer": "...", "error": "..."}
+
+    Session messages are persisted after the "done" event.
+    """
+    session_id = chat_request.session_id
+
+    if session_id:
+        session = await ChatService.get_session(session_id)
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session with id '{session_id}' not found"
+            )
+        if session.get("user_id") and session["user_id"] != current_user.get("user_id"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this session"
+            )
+
+    async def event_generator():
+        full_answer = ""
+        async for event in rag_pipeline.query_with_streaming(
+            question=chat_request.question,
+            repository_id=chat_request.repository_id,
+            limit=chat_request.limit,
+            session_id=session_id,
+        ):
+            if event.get("type") == "token":
+                full_answer = event.get("answer", full_answer)
+            elif event.get("type") == "done":
+                full_answer = event.get("answer", full_answer)
+                if session_id:
+                    await ChatService.add_message(session_id, "user", chat_request.question)
+                    await ChatService.add_message(session_id, "assistant", full_answer)
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/sessions")
