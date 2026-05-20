@@ -22,6 +22,7 @@ from backend.models.repository import RepositoryCreate, RepositoryResponse, Repo
 from backend.auth.dependencies import get_current_user
 from backend.middleware.rate_limiter import limiter
 from backend.services.processor import RepositoryProcessor
+from backend.services.keyword_search import KeywordSearchService
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
@@ -325,6 +326,98 @@ async def delete_repository(
             detail="You do not have access to delete this repository"
         )
 
+    processor = RepositoryProcessor()
+    await processor.delete_repository_data(repo_id)
+
     await db.repositories.delete_one({"_id": ObjectId(repo_id)})
 
     return None
+
+
+@router.get("/{repo_id}/symbols")
+@limiter.limit("60/minute")
+async def search_symbols(
+    request: Request,
+    repo_id: str,
+    name: str,
+    type: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    GET /repositories/{id}/symbols?name=foo&type=function
+
+    Search for functions or classes by exact name within a repository.
+
+    Args:
+        repo_id: Repository ID to search in
+        name: Symbol name to search for
+        type: Optional filter — 'function' or 'class' (searches both if omitted)
+
+    Returns:
+        List of matching symbols with file path, line numbers, and source content
+
+    Requires authentication.
+    Rate limit: 60 requests per minute.
+    """
+    db = Database.get_db()
+    user_id = current_user.get("user_id")
+
+    try:
+        repo = await db.repositories.find_one({"_id": ObjectId(repo_id)})
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid repository ID format"
+        )
+
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository with id '{repo_id}' not found"
+        )
+
+    if repo.get("user_id") and repo["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this repository"
+        )
+
+    if not name or not name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="name query parameter is required"
+        )
+
+    keyword_service = KeywordSearchService()
+
+    symbol_type = (type or "").lower()
+
+    if symbol_type == "class":
+        results = await keyword_service.search_class_names(name.strip(), repo_id)
+    elif symbol_type == "function":
+        results = await keyword_service.search_function_names(name.strip(), repo_id)
+    else:
+        functions = await keyword_service.search_function_names(name.strip(), repo_id)
+        classes = await keyword_service.search_class_names(name.strip(), repo_id)
+        results = functions + classes
+
+    symbols = []
+    for doc in results:
+        metadata = doc.get("metadata", {})
+        symbols.append({
+            "name": metadata.get("name", ""),
+            "type": metadata.get("chunk_type", "unknown"),
+            "file_path": metadata.get("file_path", ""),
+            "start_line": metadata.get("start_line", 0),
+            "end_line": metadata.get("end_line", 0),
+            "token_count": metadata.get("token_count", 0),
+            "content": doc.get("content", "")
+        })
+
+    return {
+        "repository_id": repo_id,
+        "query": name,
+        "type_filter": type,
+        "count": len(symbols),
+        "symbols": symbols
+    }
