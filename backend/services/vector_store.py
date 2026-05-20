@@ -1,7 +1,6 @@
 from backend.database import Database
 from backend.services.embedding import EmbeddingService
 from typing import List, Dict, Any, Optional
-import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,49 +8,46 @@ logger = logging.getLogger(__name__)
 
 class VectorStore:
     """Manages vector storage and semantic search in MongoDB"""
-    
+
     def __init__(self):
         self.embedding_service = EmbeddingService()
         self.index_name = "vector_search_index"
-    
+
     async def ensure_indexes(self):
-        """Create indexes on chunks collection"""
+        """Create standard MongoDB indexes on the chunks collection.
+
+        Note: The Atlas Vector Search index (HNSW, 1536 dims, cosine) must be
+        created manually in the MongoDB Atlas UI or via the Atlas Admin API.
+        Motor cannot create search indexes programmatically.
+
+        Required Atlas index configuration:
+          - Index name: vector_search_index
+          - Field: embedding  (type: vector, dimensions: 1536, similarity: cosine)
+          - Filter field: repository_id  (type: filter)
+        """
         db = Database.get_db()
-        
+
         try:
             existing_indexes = db.chunks.list_indexes()
             existing_names = [idx.get("name") for idx in await existing_indexes.to_list(None)]
-            
-            # Create repository_id index for filtering
+
             if "repository_id_1" not in existing_names:
                 await db.chunks.create_index([("repository_id", 1)])
-                print("Created index: repository_id_1")
-            
-            # Vector search requires Atlas Vector Search (paid) - skip for free tier
-            # Using standard indexes for semantic search via $searchMeta or workaround
-            print("Using standard indexes (vector search requires Atlas paid tier)")
-                
+                logger.info("Created index: repository_id_1")
+
         except Exception as e:
-            print(f"Index creation warning: {e}")
-    
+            logger.warning("Index creation warning: %s", e)
+
     async def add_chunks(self, chunks: List[Dict[str, Any]], repository_id: str) -> int:
-        """Add code chunks with embeddings to MongoDB
-        
-        Args:
-            chunks: List of code chunks (from chunker)
-            repository_id: ID of the parent repository
-            
-        Returns:
-            Number of chunks added
-        """
+        """Embed and store code chunks in MongoDB."""
         if not chunks:
             return 0
-        
+
         db = Database.get_db()
-        
+
         texts = [chunk["content"] for chunk in chunks]
         embeddings = await self.embedding_service.generate_embeddings(texts)
-        
+
         documents = []
         for chunk, embedding in zip(chunks, embeddings):
             documents.append({
@@ -67,121 +63,127 @@ class VectorStore:
                     "token_count": chunk.get("token_count", 0)
                 }
             })
-        
+
         if documents:
             result = await db.chunks.insert_many(documents)
             return len(result.inserted_ids)
-        
+
         return 0
-    
+
     async def semantic_search(
-        self, 
-        query: str, 
-        repository_id: str, 
+        self,
+        query: str,
+        repository_id: str,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
-        """Search for similar code using cosine similarity
-        
-        Args:
-            query: User query string
-            repository_id: ID of repository to search in
-            limit: Maximum number of results
-            
-        Returns:
-            List of relevant code chunks with scores
+        """Return the top-k most similar chunks for a query.
+
+        Attempts MongoDB Atlas $vectorSearch first (O(log n) HNSW).
+        Falls back to in-memory cosine similarity when the Atlas vector
+        index is not configured (e.g., local MongoDB or missing index).
         """
-        print(f"[Semantic Search] Generating query embedding...")
+        logger.info("[Semantic Search] Generating query embedding...")
         query_embedding = await self.embedding_service.generate_embedding(query)
-        
+
         db = Database.get_db()
-        
+
+        try:
+            results = await self._atlas_vector_search(query_embedding, repository_id, limit, db)
+            logger.info("[Semantic Search] Atlas Vector Search returned %d results", len(results))
+            return results
+        except Exception as e:
+            logger.warning(
+                "[Semantic Search] Atlas Vector Search unavailable (%s), using in-memory fallback", e
+            )
+            return await self._in_memory_search(query_embedding, repository_id, limit, db)
+
+    async def _atlas_vector_search(
+        self,
+        query_embedding: List[float],
+        repository_id: str,
+        limit: int,
+        db
+    ) -> List[Dict[str, Any]]:
+        """Run $vectorSearch aggregation pipeline on MongoDB Atlas."""
+        num_candidates = min(limit * 15, 150)
+
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": self.index_name,
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": num_candidates,
+                    "limit": limit,
+                    "filter": {"repository_id": repository_id}
+                }
+            },
+            {
+                "$addFields": {
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        results = await db.chunks.aggregate(pipeline).to_list(limit)
+        return results
+
+    async def _in_memory_search(
+        self,
+        query_embedding: List[float],
+        repository_id: str,
+        limit: int,
+        db
+    ) -> List[Dict[str, Any]]:
+        """Compute cosine similarity in Python across all repository chunks."""
+        import numpy as np
+
         chunks = await db.chunks.find({"repository_id": repository_id}).to_list(None)
-        
+
         if not chunks:
             return []
-        
-        print(f"[Semantic Search] Computing similarity for {len(chunks)} chunks...")
-        
-        scored_chunks = []
+
+        logger.info("[Semantic Search] In-memory cosine over %d chunks", len(chunks))
+
+        query_vec = np.array(query_embedding)
+        query_norm = np.linalg.norm(query_vec)
+
+        scored = []
         for chunk in chunks:
             chunk_embedding = chunk.get("embedding")
             if not chunk_embedding:
                 continue
-            
-            similarity = self._cosine_similarity(query_embedding, chunk_embedding)
-            scored_chunks.append({
-                **chunk,
-                "score": similarity
-            })
-        
-        scored_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-        
-        print(f"[Semantic Search] Found {len(scored_chunks)} results, returning top {limit}")
-        
-        return scored_chunks[:limit]
-    
-    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
-        """Compute cosine similarity between two vectors
-        
-        Args:
-            vec1: First vector
-            vec2: Second vector
-            
-        Returns:
-            Cosine similarity score (0 to 1)
-        """
-        import numpy as np
-        
-        v1 = np.array(vec1)
-        v2 = np.array(vec2)
-        
-        dot_product = np.dot(v1, v2)
-        norm1 = np.linalg.norm(v1)
-        norm2 = np.linalg.norm(v2)
-        
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        
-        return float(dot_product / (norm1 * norm2))
-    
+
+            chunk_vec = np.array(chunk_embedding)
+            chunk_norm = np.linalg.norm(chunk_vec)
+
+            if query_norm == 0 or chunk_norm == 0:
+                similarity = 0.0
+            else:
+                similarity = float(np.dot(query_vec, chunk_vec) / (query_norm * chunk_norm))
+
+            scored.append({**chunk, "score": similarity})
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:limit]
+
     async def delete_by_repository(self, repository_id: str) -> int:
-        """Delete all chunks for a repository
-        
-        Args:
-            repository_id: ID of repository to delete
-            
-        Returns:
-            Number of deleted documents
-        """
+        """Delete all chunks for a repository."""
         db = Database.get_db()
         result = await db.chunks.delete_many({"repository_id": repository_id})
         return result.deleted_count
-    
+
     async def count_chunks(self, repository_id: str) -> int:
-        """Count total chunks for a repository
-        
-        Args:
-            repository_id: ID of repository
-            
-        Returns:
-            Number of chunks
-        """
+        """Count total chunks for a repository."""
         db = Database.get_db()
         return await db.chunks.count_documents({"repository_id": repository_id})
-    
+
     async def get_chunk(self, chunk_id: str) -> Optional[Dict[str, Any]]:
-        """Get a single chunk by ID
-        
-        Args:
-            chunk_id: The chunk's MongoDB ObjectId as string
-            
-        Returns:
-            Chunk document or None
-        """
+        """Get a single chunk by ID."""
         from bson import ObjectId
-        
+
         db = Database.get_db()
-        
+
         try:
             chunk = await db.chunks.find_one({"_id": ObjectId(chunk_id)})
             if chunk:
