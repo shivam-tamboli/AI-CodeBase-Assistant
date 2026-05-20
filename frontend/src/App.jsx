@@ -1,22 +1,51 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 
-const API_URL = 'http://localhost:8000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
   const [isRegistering, setIsRegistering] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+
+  // Repository state
   const [repositories, setRepositories] = useState([])
   const [selectedRepo, setSelectedRepo] = useState('')
-  const [question, setQuestion] = useState('')
-  const [answer, setAnswer] = useState('')
-  const [sources, setSources] = useState([])
-  const [loading, setLoading] = useState(false)
+
+  // Session state
+  const [sessions, setSessions] = useState([])
+  const [activeSessionId, setActiveSessionId] = useState(null)
+  const [chatHistory, setChatHistory] = useState([])
+
+  // Upload state
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadStatus, setUploadStatus] = useState('')
+
+  // Chat state
+  const [question, setQuestion] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  // Load repos on mount if token already exists (fixes page refresh bug)
+  useEffect(() => {
+    if (token) fetchRepositories(token)
+  }, [])
+
+  // Load sessions whenever the selected repo changes
+  useEffect(() => {
+    if (token && selectedRepo) {
+      fetchSessions(selectedRepo)
+      setActiveSessionId(null)
+      setChatHistory([])
+    } else {
+      setSessions([])
+      setActiveSessionId(null)
+      setChatHistory([])
+    }
+  }, [selectedRepo])
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
 
   const login = async () => {
     try {
@@ -42,6 +71,18 @@ function App() {
     }
   }
 
+  const logout = () => {
+    setToken('')
+    localStorage.removeItem('token')
+    setRepositories([])
+    setSessions([])
+    setActiveSessionId(null)
+    setChatHistory([])
+    setSelectedRepo('')
+  }
+
+  // ── Repositories ──────────────────────────────────────────────────────────
+
   const fetchRepositories = async (authToken) => {
     try {
       const res = await axios.get(`${API_URL}/repositories`, {
@@ -49,58 +90,172 @@ function App() {
       })
       setRepositories(res.data)
     } catch (err) {
-      console.error(err)
+      console.error('Failed to fetch repositories:', err)
     }
   }
 
   const handleUpload = async () => {
     if (!uploadFile) return
     setLoading(true)
-    setUploadStatus('Uploading...')
-    
+    setUploadStatus('Uploading and indexing...')
+
     const formData = new FormData()
     formData.append('file', uploadFile)
-    
+
     try {
-      const res = await axios.post(`${API_URL}/repositories/upload`, formData, {
-        headers: { 
+      await axios.post(`${API_URL}/repositories/upload`, formData, {
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
         }
       })
-      setUploadStatus('Uploaded! Processing...')
+      setUploadStatus('Done! Repository indexed.')
+      setUploadFile(null)
       fetchRepositories(token)
-      alert('Repository uploaded successfully!')
-      setUploadStatus('')
     } catch (err) {
       setUploadStatus('Upload failed: ' + (err.response?.data?.detail || err.message))
+    } finally {
+      setLoading(false)
+      setTimeout(() => setUploadStatus(''), 4000)
+    }
+  }
+
+  // ── Sessions ──────────────────────────────────────────────────────────────
+
+  const fetchSessions = async (repoId) => {
+    try {
+      const res = await axios.get(`${API_URL}/chat/sessions`, {
+        params: { repository_id: repoId },
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setSessions(res.data.sessions || [])
+    } catch (err) {
+      console.error('Failed to fetch sessions:', err)
+    }
+  }
+
+  const startNewSession = async () => {
+    if (!selectedRepo) return
+    try {
+      const res = await axios.post(`${API_URL}/chat/sessions`,
+        { repository_id: selectedRepo },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      const newSessionId = res.data.session_id
+      setActiveSessionId(newSessionId)
+      setChatHistory([])
+      fetchSessions(selectedRepo)
+    } catch (err) {
+      alert('Failed to create session: ' + (err.response?.data?.detail || err.message))
+    }
+  }
+
+  const selectSession = async (sessionId) => {
+    setActiveSessionId(sessionId)
+    try {
+      const res = await axios.get(`${API_URL}/chat/sessions/${sessionId}/history`, {
+        params: { limit: 50 },
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setChatHistory(res.data.messages || [])
+    } catch (err) {
+      console.error('Failed to load session history:', err)
+      setChatHistory([])
+    }
+  }
+
+  const deleteSession = async (sessionId, e) => {
+    e.stopPropagation()
+    if (!confirm('Delete this conversation?')) return
+    try {
+      await axios.delete(`${API_URL}/chat/sessions/${sessionId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null)
+        setChatHistory([])
+      }
+      fetchSessions(selectedRepo)
+    } catch (err) {
+      alert('Failed to delete session: ' + (err.response?.data?.detail || err.message))
+    }
+  }
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+
+  const askQuestion = async () => {
+    if (!question.trim() || !selectedRepo) return
+
+    // Ensure we have an active session
+    let sessionId = activeSessionId
+    if (!sessionId) {
+      try {
+        const res = await axios.post(`${API_URL}/chat/sessions`,
+          { repository_id: selectedRepo },
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        sessionId = res.data.session_id
+        setActiveSessionId(sessionId)
+        fetchSessions(selectedRepo)
+      } catch (err) {
+        alert('Could not create session: ' + (err.response?.data?.detail || err.message))
+        return
+      }
+    }
+
+    const userMessage = question.trim()
+    setQuestion('')
+    setLoading(true)
+
+    // Optimistically add the user message to chat
+    setChatHistory(prev => [...prev, { role: 'user', content: userMessage, timestamp: new Date().toISOString() }])
+
+    try {
+      const res = await axios.post(`${API_URL}/chat/query`, {
+        question: userMessage,
+        repository_id: selectedRepo,
+        session_id: sessionId,
+        limit: 5
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      const assistantMessage = {
+        role: 'assistant',
+        content: res.data.answer,
+        sources: res.data.sources,
+        chunks_found: res.data.chunks_found,
+        timestamp: new Date().toISOString()
+      }
+      setChatHistory(prev => [...prev, assistantMessage])
+      fetchSessions(selectedRepo)
+    } catch (err) {
+      setChatHistory(prev => [...prev, {
+        role: 'assistant',
+        content: 'Error: ' + (err.response?.data?.detail || err.message),
+        timestamp: new Date().toISOString()
+      }])
     } finally {
       setLoading(false)
     }
   }
 
-  const askQuestion = async () => {
-    if (!question || !selectedRepo) return
-    setLoading(true)
-    setAnswer('')
-    setSources([])
-    
-    try {
-      const res = await axios.post(`${API_URL}/chat/query`, {
-        question,
-        repository_id: selectedRepo,
-        limit: 5
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      setAnswer(res.data.answer)
-      setSources(res.data.sources)
-    } catch (err) {
-      setAnswer('Error: ' + (err.response?.data?.detail || err.message))
-    } finally {
-      setLoading(false)
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      askQuestion()
     }
   }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  const formatTime = (isoString) => {
+    if (!isoString) return ''
+    const d = new Date(isoString)
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // ── Auth Screen ───────────────────────────────────────────────────────────
 
   if (!token) {
     return (
@@ -111,31 +266,27 @@ function App() {
         </header>
         <main>
           <div className="login-form">
-            <h2>{isRegistering ? 'Register' : 'Login'}</h2>
-            <input 
-              type="text" 
-              placeholder="Username" 
+            <h2>{isRegistering ? 'Create Account' : 'Login'}</h2>
+            <input
+              type="text"
+              placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
             />
-            <input 
-              type="password" 
-              placeholder="Password" 
+            <input
+              type="password"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
             />
-            <button 
-              onClick={isRegistering ? register : login}
-              disabled={!username || !password}
-            >
-              {isRegistering ? 'Register' : 'Login'}
+            <button onClick={isRegistering ? register : login} disabled={!username || !password}>
+              {isRegistering ? 'Create Account' : 'Login'}
             </button>
             <p className="toggle-auth">
               {isRegistering ? 'Already have an account?' : "Don't have an account?"}
-              <button 
-                className="link-btn"
-                onClick={() => setIsRegistering(!isRegistering)}
-              >
+              <button className="link-btn" onClick={() => setIsRegistering(!isRegistering)}>
                 {isRegistering ? ' Login' : ' Register'}
               </button>
             </p>
@@ -145,80 +296,165 @@ function App() {
     )
   }
 
+  // ── Main App ──────────────────────────────────────────────────────────────
+
   return (
     <div className="app">
       <header>
         <h1>AI Codebase Assistant</h1>
-        <button className="logout-btn" onClick={() => { setToken(''); localStorage.removeItem('token') }}>
-          Logout
-        </button>
+        <div className="header-right">
+          <span className="username-label">{username || 'Logged in'}</span>
+          <button className="logout-btn" onClick={logout}>Logout</button>
+        </div>
       </header>
-      
-      <main>
-        <section className="upload-section">
-          <h2>Upload Repository</h2>
-          <div className="upload-form">
-            <input 
-              type="file" 
-              accept=".zip"
-              onChange={(e) => setUploadFile(e.target.files[0])}
-            />
-            <button onClick={handleUpload} disabled={loading || !uploadFile}>
-              {uploadStatus || 'Upload ZIP'}
-            </button>
-          </div>
-        </section>
 
-        <section className="chat-section">
-          <h2>Ask Questions</h2>
-          
-          <div className="repo-select">
-            <label>Select Repository:</label>
-            <select 
-              value={selectedRepo} 
+      <main className="main-layout">
+
+        {/* ── LEFT SIDEBAR ─────────────────────────────────────────────── */}
+        <aside className="sidebar">
+          <section className="upload-section">
+            <h2>Upload Repository</h2>
+            <div className="upload-form">
+              <input
+                type="file"
+                accept=".zip"
+                onChange={(e) => setUploadFile(e.target.files[0])}
+              />
+              <button onClick={handleUpload} disabled={loading || !uploadFile}>
+                {uploadStatus || 'Upload ZIP'}
+              </button>
+            </div>
+          </section>
+
+          <section className="repo-section">
+            <h2>Repository</h2>
+            <select
+              value={selectedRepo}
               onChange={(e) => setSelectedRepo(e.target.value)}
+              className="repo-select-dropdown"
             >
-              <option value="">-- Select --</option>
+              <option value="">-- Select a repository --</option>
               {repositories.map(repo => (
                 <option key={repo.id} value={repo.id}>{repo.name}</option>
               ))}
             </select>
-          </div>
-          
-          <div className="question-input">
-            <textarea
-              placeholder="Ask a question about your code..."
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              rows={3}
-            />
-            <button onClick={askQuestion} disabled={loading || !question || !selectedRepo}>
-              {loading ? 'Thinking...' : 'Ask'}
-            </button>
-          </div>
-          
-          {answer && (
-            <div className="answer">
-              <h3>Answer:</h3>
-              <p>{answer}</p>
-              
-              {sources.length > 0 && (
-                <div className="sources">
-                  <h4>Sources:</h4>
-                  <ul>
-                    {sources.map((src, i) => (
-                      <li key={i}>
-                        <code>{src.file_path}</code> 
-                        (lines {src.start_line}-{src.end_line})
-                        <span className="score">{src.score?.toFixed(2)}</span>
-                      </li>
-                    ))}
-                  </ul>
+          </section>
+
+          {selectedRepo && (
+            <section className="sessions-section">
+              <div className="sessions-header">
+                <h2>Conversations</h2>
+                <button className="new-chat-btn" onClick={startNewSession}>+ New Chat</button>
+              </div>
+
+              {sessions.length === 0 ? (
+                <p className="no-sessions">No conversations yet. Click "+ New Chat" to start.</p>
+              ) : (
+                <ul className="sessions-list">
+                  {sessions.map(session => (
+                    <li
+                      key={session.id}
+                      className={`session-item ${activeSessionId === session.id ? 'active' : ''}`}
+                      onClick={() => selectSession(session.id)}
+                    >
+                      <div className="session-info">
+                        <span className="session-date">{formatTime(session.updated_at || session.created_at)}</span>
+                        <span className="session-count">{session.message_count} messages</span>
+                      </div>
+                      <button
+                        className="session-delete-btn"
+                        onClick={(e) => deleteSession(session.id, e)}
+                        title="Delete conversation"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+        </aside>
+
+        {/* ── CHAT AREA ─────────────────────────────────────────────────── */}
+        <section className="chat-section">
+          {!selectedRepo ? (
+            <div className="empty-state">
+              <p>Select a repository from the sidebar to start asking questions.</p>
+              <p>If you don't have one yet, upload a ZIP file first.</p>
+            </div>
+          ) : (
+            <>
+              {activeSessionId && (
+                <div className="session-badge">
+                  Conversation active · {chatHistory.length} messages
                 </div>
               )}
-            </div>
+
+              <div className="chat-messages">
+                {chatHistory.length === 0 && (
+                  <div className="empty-chat">
+                    <p>Ask a question about your codebase below.</p>
+                    <p className="hint">Try: "How does authentication work?" or "Where is the main entry point?"</p>
+                  </div>
+                )}
+
+                {chatHistory.map((msg, i) => (
+                  <div key={i} className={`message message-${msg.role}`}>
+                    <div className="message-role">{msg.role === 'user' ? 'You' : 'Assistant'}</div>
+                    <div className="message-content">{msg.content}</div>
+
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div className="sources">
+                        <div className="sources-title">Sources ({msg.sources.length} chunks)</div>
+                        <ul>
+                          {msg.sources.map((src, j) => (
+                            <li key={j}>
+                              <code>{src.file_path || '(unknown file)'}</code>
+                              {src.start_line > 0 && (
+                                <span> lines {src.start_line}–{src.end_line}</span>
+                              )}
+                              {src.name && <span className="chunk-name"> · {src.chunk_type}: {src.name}</span>}
+                              <span className="score">{src.score?.toFixed(3)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="message-time">{formatTime(msg.timestamp)}</div>
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="message message-assistant">
+                    <div className="message-role">Assistant</div>
+                    <div className="message-content thinking">Thinking...</div>
+                  </div>
+                )}
+              </div>
+
+              <div className="chat-input-area">
+                <textarea
+                  placeholder="Ask a question about your code... (Enter to send, Shift+Enter for new line)"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={3}
+                  disabled={loading}
+                />
+                <button
+                  onClick={askQuestion}
+                  disabled={loading || !question.trim()}
+                  className="send-btn"
+                >
+                  {loading ? 'Thinking...' : 'Ask'}
+                </button>
+              </div>
+            </>
           )}
         </section>
+
       </main>
     </div>
   )

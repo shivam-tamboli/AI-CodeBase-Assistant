@@ -42,7 +42,7 @@ class CodeChunker:
         
         chunks = []
         
-        imports_chunk = self._create_imports_chunk(source, metadata)
+        imports_chunk = self._create_imports_chunk(source, metadata, file_path)
         if imports_chunk:
             chunks.append(imports_chunk)
         
@@ -72,7 +72,7 @@ class CodeChunker:
         
         return self._split_large_chunks(chunks)
     
-    def _create_imports_chunk(self, source: str, metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _create_imports_chunk(self, source: str, metadata: Dict[str, Any], file_path: str = "") -> Optional[Dict[str, Any]]:
         """Create a chunk for imports/header"""
         imports = metadata.get("imports", [])
         if not imports:
@@ -93,7 +93,7 @@ class CodeChunker:
             "name": "__init__",
             "start_line": 1,
             "end_line": min(50, metadata.get("line_count", 0)),
-            "file_path": "",
+            "file_path": file_path,
             "token_count": self.count_tokens(header)
         }
     
