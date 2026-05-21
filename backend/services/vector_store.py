@@ -106,7 +106,8 @@ class VectorStore:
         db
     ) -> List[Dict[str, Any]]:
         """Run $vectorSearch aggregation pipeline on MongoDB Atlas."""
-        num_candidates = min(limit * 15, 150)
+        num_candidates = max(limit * 20, 100)
+        num_candidates = min(num_candidates, 1000)
 
         pipeline = [
             {
