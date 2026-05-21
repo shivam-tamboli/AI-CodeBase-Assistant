@@ -37,15 +37,16 @@ class HybridSearchService:
         """
         if not query or not query.strip():
             return []
-        
-        semantic_results = await self.vector_store.semantic_search(
-            query, repository_id, limit=self.max_results_per_search
+
+        semantic_results, keyword_results = await asyncio.gather(
+            self.vector_store.semantic_search(
+                query, repository_id, limit=self.max_results_per_search
+            ),
+            self.keyword_service.keyword_search(
+                query, repository_id, limit=self.max_results_per_search
+            ),
         )
-        
-        keyword_results = await self.keyword_service.keyword_search(
-            query, repository_id, limit=self.max_results_per_search
-        )
-        
+
         combined = self._reciprocal_rank_fusion(semantic_results, keyword_results)
 
         try:
@@ -265,14 +266,15 @@ class HybridSearchService:
         Returns:
             Dictionary with search statistics
         """
-        semantic_results = await self.vector_store.semantic_search(
-            query, repository_id, limit=self.max_results_per_search
+        semantic_results, keyword_results = await asyncio.gather(
+            self.vector_store.semantic_search(
+                query, repository_id, limit=self.max_results_per_search
+            ),
+            self.keyword_service.keyword_search(
+                query, repository_id, limit=self.max_results_per_search
+            ),
         )
-        
-        keyword_results = await self.keyword_service.keyword_search(
-            query, repository_id, limit=self.max_results_per_search
-        )
-        
+
         semantic_doc_ids = {self._get_doc_id(d) for d in semantic_results}
         keyword_doc_ids = {self._get_doc_id(d) for d in keyword_results}
         overlap = semantic_doc_ids & keyword_doc_ids
