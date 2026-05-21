@@ -1,184 +1,162 @@
 # AI Codebase Assistant
 
-A full-stack Retrieval Augmented Generation (RAG) system for querying code repositories in natural language. Upload a project as a ZIP or import directly from GitHub, ask questions in plain English, and receive answers with exact file path and line number citations — streamed token-by-token to the browser.
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.104-009688?logo=fastapi&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![OpenAI](https://img.shields.io/badge/OpenAI-API-412991?logo=openai&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-41_passing-4CAF50)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-**Stack**: Python 3.12 · FastAPI · MongoDB Atlas · OpenAI API · React 19 · Vite  
-**Deploy**: Render (backend) · Vercel (frontend)
-
----
-
-## What It Does
-
-```
-Upload ZIP or paste GitHub URL
-         ↓
-Scan → AST/tree-sitter parse → chunk → embed → store in MongoDB
-         ↓
-Ask a question in plain English
-         ↓
-Hybrid search: semantic ($vectorSearch) + keyword ($text) → RRF fusion
-         ↓
-Cohere cross-encoder re-ranking (optional)
-         ↓
-GPT-4o-mini generates an answer with file:line citations
-         ↓
-Citation validator checks every cited file path against retrieved chunks
-         ↓
-Answer streams token-by-token to the browser via SSE
-```
+A production-grade **Retrieval Augmented Generation (RAG)** system for querying code repositories in natural language. Upload a project as a ZIP or import directly from GitHub — public or private — ask questions in plain English, and receive AI-generated answers with exact file and line number citations, streamed token-by-token to the browser.
 
 ---
 
-## Architecture
+## Key Features
 
-```
-Browser (React SPA — Vercel)
-  │  HTTP/JSON + Bearer token
-  │  SSE for streaming answers
-  ▼
-FastAPI (Python — Render)
-  ├── Middleware: CORS · Rate Limiting (SlowAPI) · Error Handlers
-  ├── Auth:        POST /auth/register, /auth/login  (JWT + bcrypt)
-  ├── /repositories  CRUD · /upload · /import · /reindex · /symbols · /stats
-  └── /chat          sessions CRUD · /query · /query/stream (SSE)
-         │
-         ├── RepositoryProcessor
-         │     scan_directory → (ast_parser | treesitter_parser) → CodeChunker
-         │     → EmbeddingService (batch) → VectorStore.add_chunks
-         │     Incremental: MD5 diff — only re-embeds changed files
-         │
-         ├── HybridSearchService
-         │     VectorStore._atlas_vector_search  ($vectorSearch HNSW)
-         │       └── fallback: _in_memory_search (cosine, numpy)
-         │     KeywordSearchService              ($text compound index)
-         │     _reciprocal_rank_fusion (k=60)
-         │     _cohere_rerank (cross-encoder)
-         │       └── fallback: _rerank (keyword-bonus heuristic)
-         │
-         └── LLMService
-               _build_prompt (system + history + context)
-               generate_answer / generate_streaming_answer (stream=True)
-               _validate_citations (verifies file paths in answer)
+**Ingestion**
+- ZIP upload or GitHub import (`git clone --depth 1`, public + private via `GITHUB_TOKEN`)
+- Multi-language AST parsing: Python (stdlib `ast`), JavaScript, TypeScript, Go, Java, Rust, Ruby (tree-sitter), with line-based fallback for other languages
+- Symbol-aware chunking at function and class boundaries with 100-token overlap
+- Incremental re-indexing: MD5 hash diff — only re-embeds changed files, unchanged files produce zero API calls
+- Optional LLM-generated chunk summaries prepended before embedding for richer semantic retrieval
+- Async ingestion: HTTP 202 returned immediately; indexing runs as a background task
 
-MongoDB Atlas (ragdb)
-  ├── users          — accounts (username unique index)
-  ├── repositories   — repo metadata
-  ├── chunks         — code + 1536-dim embeddings + file_hash + metadata
-  │     Indexes: repository_id_1
-  │              content_name_text_index (compound $text)
-  │              vector_search_index     (HNSW — Atlas UI, manual setup)
-  └── chat_sessions  — conversation history
+**Search (Hybrid)**
+- Semantic search via OpenAI embeddings → MongoDB Atlas `$vectorSearch` (HNSW); automatic in-memory cosine fallback
+- Keyword search via MongoDB `$text` compound index (symbol names weighted 5× over body text)
+- Reciprocal Rank Fusion (k=60) merges both ranked lists mathematically
+- Cohere cross-encoder re-ranking (`rerank-english-v3.0`) when configured; BM25Okapi fallback otherwise
+
+**Answer Generation**
+- Answers stream token-by-token via Server-Sent Events; browser consumes with `ReadableStream`
+- Multi-turn conversation sessions backed by MongoDB with tiktoken-based history window
+- Citation enforcement: regex validates every cited file path against retrieved chunk metadata; warns on unverified references
+- Provider-agnostic LLM layer: switch between OpenAI GPT models and Anthropic Claude with a single environment variable
+
+**Security & Operations**
+- JWT authentication (HS256, 24-hour expiry) with bcrypt password hashing
+- Per-IP rate limiting on every endpoint
+- 41 automated tests (pytest + httpx, fully mock-isolated — no external services required)
+
+---
+
+## How It Works
+
+```mermaid
+flowchart LR
+    A([Upload ZIP\nor GitHub URL]) --> B[FileScanner]
+    B --> C{Language}
+    C -->|Python| D[ast parser]
+    C -->|JS/TS/Go/Java\nRust/Ruby| E[tree-sitter]
+    C -->|Other| F[line-based]
+    D & E & F --> G[CodeChunker]
+    G --> H[EmbeddingService\nbatch embed]
+    H --> I[(MongoDB Atlas\nchunks)]
+
+    J([User question]) --> K[Embed query]
+    J --> L[$text keyword\nsearch]
+    K --> M[$vectorSearch\nHNSW]
+    M & L --> N[RRF Fusion\nk=60]
+    N --> O[Cohere / BM25\nrerank]
+    O --> P[LLMService\nSSE stream]
+    I --> M
+    I --> L
+    P --> Q([Answer +\ncitations])
 ```
 
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Backend | Python 3.12, FastAPI 0.104, Uvicorn |
-| Database | MongoDB Atlas (motor async driver) |
-| Embeddings | OpenAI `text-embedding-3-small` (1536-dim, batch) |
-| LLM | OpenAI `gpt-4o-mini` (default) — configurable via `LLM_MODEL` |
-| Vector Search | MongoDB Atlas `$vectorSearch` (HNSW) with in-memory cosine fallback |
-| Keyword Search | MongoDB `$text` compound index on `content` + `metadata.name` |
-| Re-ranking | Cohere `rerank-english-v3.0` cross-encoder (optional, heuristic fallback) |
-| Auth | JWT (python-jose, HS256, 24h expiry) + bcrypt (passlib) |
-| Rate Limiting | SlowAPI — per-IP on all endpoints |
-| Multi-language | Python (`ast`), JS/TS/Go/Java/Rust/Ruby (tree-sitter), line-based fallback |
-| Frontend | React 19, Vite, Axios, react-markdown |
-| Streaming | Server-Sent Events (backend) + Fetch `ReadableStream` (frontend) |
-| Deployment | Vercel (frontend) + Render (backend) |
-| Testing | pytest 7.4, pytest-asyncio, httpx (41 tests) |
+For a detailed walkthrough of each component, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
-## Features
+## Quick Start
 
-### Repository Ingestion
-- **ZIP upload** — multipart file upload, extracted and indexed server-side
-- **GitHub URL import** — `git clone --depth 1` from any public repository URL
-- **Incremental re-indexing** — `POST /repositories/{id}/reindex` computes MD5 hashes per file, deletes stale chunks, re-embeds only changed or new files; unchanged files produce zero API calls
+### Prerequisites
+- Python 3.10+, Node.js 18+, `git` on PATH
+- MongoDB Atlas account (free M0 tier — [cloud.mongodb.com](https://cloud.mongodb.com))
+- OpenAI API key ([platform.openai.com](https://platform.openai.com))
 
-### Multi-language Parsing
-| Language | Parser | Extracts |
-|---|---|---|
-| Python | `ast` (stdlib) | functions, async functions, classes, imports with exact line numbers |
-| JavaScript / JSX | tree-sitter | function declarations, arrow functions, methods, classes |
-| TypeScript / TSX | tree-sitter | same as JS + interface declarations |
-| Go | tree-sitter | function declarations, method declarations, type declarations |
-| Java | tree-sitter | method declarations, constructors, class/interface/enum declarations |
-| Rust | tree-sitter | function items, struct/enum/trait/impl items |
-| Ruby | tree-sitter | methods, singleton methods, classes, modules |
-| Others (PHP, C#, etc.) | line-based | sliding-window chunks with 100-token overlap |
+### Backend
 
-### Search Pipeline
-1. **Semantic search** — query embedding (1536-dim) → `$vectorSearch` HNSW on Atlas; falls back to in-memory cosine similarity if the Atlas index is not configured
-2. **Keyword search** — MongoDB `$text` on `content` + `metadata.name`, TF-IDF scored
-3. **RRF fusion** — `score = Σ 1/(rank + 60)` merges both result sets
-4. **Cohere re-ranking** (optional) — `rerank-english-v3.0` cross-encoder reads query + chunk content together; falls back to keyword-bonus heuristic when `COHERE_API_KEY` is absent
+```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate       # Windows: venv\Scripts\activate
 
-### Answer Generation
-- System prompt + up to 10 messages of conversation history + retrieved code context
-- **Citation enforcement** — regex-extracts `.py` (and other) file paths from the answer, validates each against `retrieved_chunks` metadata; appends a blockquote warning for unverified references; response includes `citation_valid` flag and `citation_warnings` list
-- **Streaming** — `POST /chat/query/stream` returns `text/event-stream`; tokens appear in the browser incrementally via `ReadableStream`
+# Install dependencies
+pip install -r backend/requirements.txt
 
-### Authentication
-- Register / login with username + password
-- Passwords hashed with bcrypt (passlib)
-- JWT tokens (HS256, 24-hour expiry, stored in `localStorage`)
-- All data scoped to the authenticated user
-- Rate limiting on every endpoint via SlowAPI
+# Configure environment
+cp backend/.env.example backend/.env
+# Edit backend/.env — minimum required: OPENAI_API_KEY, MONGODB_URI, JWT_SECRET
+```
 
-### Conversation Sessions
-- Create multiple named conversations per repository
-- Full message history stored in MongoDB (role, content, timestamp)
-- Continue previous conversations — LLM receives last 10 messages as context
-- Session sidebar: switch, create, delete conversations
+`backend/.env` minimum:
+```env
+OPENAI_API_KEY=sk-...
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/ragdb
+JWT_SECRET=any-long-random-string
+```
 
-### API Utilities
-- `GET /repositories/{id}/symbols?name=foo&type=function|class` — exact symbol lookup by name
-- `GET /repositories/{id}/stats` — chunk count and indexed status
-- `GET /health` — database connectivity check
+```bash
+uvicorn backend.main:app --reload
+# API:       http://localhost:8000
+# Swagger:   http://localhost:8000/docs
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+# App: http://localhost:5173
+```
+
+No frontend environment variables are needed for local development. The app defaults to `http://localhost:8000`.
 
 ---
 
-## External Services and API Keys
+## Configuration Reference
 
-### Required
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `OPENAI_API_KEY` | **Yes** | — | OpenAI API key (embeddings + LLM when `LLM_PROVIDER=openai`) |
+| `MONGODB_URI` | **Yes** | — | MongoDB Atlas connection string |
+| `JWT_SECRET` | **Yes** | insecure default | HS256 signing secret — use a strong random string in production |
+| `LLM_PROVIDER` | No | `openai` | `openai` or `anthropic` |
+| `LLM_MODEL` | No | `gpt-4o-mini` | Model name for the selected provider |
+| `EMBEDDING_PROVIDER` | No | `openai` | `openai` (only supported option currently) |
+| `EMBEDDING_MODEL` | No | `text-embedding-3-small` | OpenAI embedding model |
+| `ANTHROPIC_API_KEY` | No | — | Required when `LLM_PROVIDER=anthropic` |
+| `COHERE_API_KEY` | No | — | Enables Cohere cross-encoder re-ranking; omit for BM25 fallback |
+| `GITHUB_TOKEN` | No | — | Personal access token for importing private GitHub repositories |
+| `ENABLE_CHUNK_SUMMARIES` | No | `false` | Generate LLM summaries per chunk at index time to improve retrieval |
+| `ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated CORS origins; set to your Vercel URL in production |
+| `LLM_MAX_TOKENS` | No | `2000` | Maximum tokens in LLM response |
 
-#### OpenAI
-**Used for**: generating 1536-dim embeddings (`text-embedding-3-small`) and LLM answers (`gpt-4o-mini`)  
-**Where to get it**: [platform.openai.com](https://platform.openai.com) → API Keys → Create new secret key  
-**Free tier**: $5 credit on new accounts (enough for substantial development)  
-**Cost at scale**: ~$0.02 per 1M embedding tokens; $0.15 per 1M input tokens (gpt-4o-mini)  
-**Environment variable**: `OPENAI_API_KEY`
-
-#### MongoDB Atlas
-**Used for**: storing users, repositories, code chunks (with embeddings), chat sessions; running `$text` and `$vectorSearch` queries  
-**Where to get it**: [cloud.mongodb.com](https://cloud.mongodb.com) → Create account → Build a Cluster → M0 Free  
-**Free tier**: M0 — 512 MB storage, shared cluster. Supports `$vectorSearch` at no cost  
-**Environment variable**: `MONGODB_URI` (format: `mongodb+srv://user:pass@cluster.mongodb.net/ragdb`)
-
-### Optional (but recommended for production quality)
-
-#### Cohere (cross-encoder re-ranking)
-**Used for**: re-ranking RRF results with a cross-encoder ML model — significantly better answer quality for ambiguous queries  
-**Without it**: falls back to keyword-bonus heuristic rerank automatically  
-**Where to get it**: [cohere.com](https://cohere.com) → Sign up → API Keys  
-**Free tier**: 1,000 requests/month, rate limited  
-**Environment variable**: `COHERE_API_KEY`
+See [`backend/.env.example`](backend/.env.example) for a fully annotated template.
 
 ---
 
-### MongoDB Atlas Vector Search Index (manual setup — one time)
+## External Services
 
-This step activates `$vectorSearch` HNSW indexing. Without it the system works correctly using in-memory cosine similarity, but queries are O(n) across all chunks.
+| Service | Required | Free Tier | Purpose |
+|---|---|---|---|
+| **MongoDB Atlas** | Yes | M0 — 512 MB | Database, vector search, text search |
+| **OpenAI** | Yes (default) | $5 trial credit | Embeddings + LLM completions |
+| **Anthropic** | No — alt LLM | $5 trial credit | LLM completions (`LLM_PROVIDER=anthropic`) |
+| **Cohere** | No | 1,000 req/month | Cross-encoder re-ranking |
+| **GitHub Token** | No | Free | Importing private repositories |
 
-1. Go to [cloud.mongodb.com](https://cloud.mongodb.com) → your cluster → **Search** tab → **Create Search Index**
+### MongoDB Atlas Vector Search Index (one-time setup)
+
+The `$vectorSearch` HNSW index must be created manually through the Atlas UI. Without it the system falls back to in-memory cosine similarity automatically — no configuration change needed.
+
+1. Atlas → your cluster → **Atlas Search** tab → **Create Search Index**
 2. Select **Atlas Vector Search** → **JSON Editor**
-3. Choose database `ragdb`, collection `chunks`
-4. Paste this configuration:
+3. Database: `ragdb`, Collection: `chunks`
+4. Paste:
 
 ```json
 {
@@ -197,106 +175,7 @@ This step activates `$vectorSearch` HNSW indexing. Without it the system works c
 }
 ```
 
-5. Set index name to exactly `vector_search_index`
-6. Click **Create Search Index** and wait for it to become active (~2 minutes)
-
----
-
-## Local Setup
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- `git` installed and on PATH
-- MongoDB Atlas account with connection string
-- OpenAI API key
-
-### Backend
-
-```bash
-# From project root
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-pip install -r backend/requirements.txt
-
-cp backend/.env.example backend/.env
-# Edit backend/.env — fill in OPENAI_API_KEY, MONGODB_URI, JWT_SECRET
-```
-
-`backend/.env` minimum required:
-```
-OPENAI_API_KEY=sk-...
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/ragdb
-JWT_SECRET=any-long-random-string-change-before-deploying
-```
-
-```bash
-uvicorn backend.main:app --reload
-# API:  http://localhost:8000
-# Docs: http://localhost:8000/docs
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-# App: http://localhost:5173
-```
-
-No frontend environment variables are required for local development. The app defaults to `http://localhost:8000` as the API base URL.
-
----
-
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `OPENAI_API_KEY` | **Yes** | — | OpenAI API key for embeddings and LLM |
-| `MONGODB_URI` | **Yes** | — | MongoDB Atlas connection string |
-| `JWT_SECRET` | **Yes** | insecure default | HS256 signing secret — use a strong random string in production |
-| `COHERE_API_KEY` | No | — | Enables Cohere cross-encoder re-ranking; omit to use heuristic fallback |
-| `LLM_MODEL` | No | `gpt-4o-mini` | OpenAI model name — e.g. `gpt-4o`, `gpt-4` |
-| `LLM_MAX_TOKENS` | No | `2000` | Maximum tokens in LLM response |
-| `ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated CORS origins (set to your Vercel URL in production) |
-
----
-
-## Deployment
-
-### Backend → Render
-
-1. [render.com](https://render.com) → New → Web Service → Connect GitHub repo
-2. Settings:
-   - **Runtime**: Python 3
-   - **Root Directory**: (leave empty)
-   - **Build Command**: `pip install -r backend/requirements.txt`
-   - **Start Command**: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
-3. Environment Variables (Render dashboard → Environment):
-   - `OPENAI_API_KEY`
-   - `MONGODB_URI`
-   - `JWT_SECRET` (generate a strong random string)
-   - `ALLOWED_ORIGINS` = your Vercel URL (set after frontend is deployed)
-   - `COHERE_API_KEY` (optional)
-4. Deploy — Render gives you a URL like `https://your-app.onrender.com`
-
-> **Free tier note**: Render free tier spins down after 15 minutes of inactivity. First request after sleep takes ~30 seconds. The `Procfile` in the project root is configured correctly for Render and Railway.
-
-### Frontend → Vercel
-
-1. In `frontend/src/App.jsx` line 6, the API URL reads from an environment variable:
-   ```js
-   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-   ```
-2. [vercel.com](https://vercel.com) → New Project → Import GitHub repo
-3. **Root Directory**: `frontend`
-4. Framework: auto-detected as Vite
-5. Environment Variable: `VITE_API_URL` = your Render backend URL
-6. Deploy
-
-`frontend/vercel.json` is already configured with SPA rewrites.
+5. Name: `vector_search_index` → **Create**. Wait ~2 minutes for activation.
 
 ---
 
@@ -316,45 +195,69 @@ Authorization: Bearer <access_token>
 
 ### Repositories
 
-| Method | Path | Notes | Rate Limit |
+| Method | Path | Description | Rate Limit |
 |---|---|---|---|
-| GET | `/repositories` | List user's repos | 60/min |
-| GET | `/repositories/{id}` | Single repo | 60/min |
-| POST | `/repositories` | Create empty repo — body: `{name, description}` | 10/min |
-| POST | `/repositories/upload` | Multipart ZIP upload — fields: `file`, `name?`, `description?` | 10/min |
-| POST | `/repositories/import` | JSON body: `{url, name?, description?}` — public GitHub URLs only | 5/min |
-| PUT | `/repositories/{id}` | Update name/description | 20/min |
-| DELETE | `/repositories/{id}` | Deletes repo + all chunks | 10/min |
-| GET | `/repositories/{id}/symbols` | Query params: `name`, `type` (`function`\|`class`) | 60/min |
-| GET | `/repositories/{id}/stats` | Returns `{chunk_count, indexed}` | 60/min |
-| POST | `/repositories/{id}/reindex` | Multipart ZIP — incremental re-index | 5/min |
+| GET | `/repositories` | List user's repositories | 60/min |
+| GET | `/repositories/{id}` | Get single repository | 60/min |
+| POST | `/repositories` | Create empty repository — `{name, description}` | 20/min |
+| POST | `/repositories/upload` | Upload ZIP — multipart: `file`, `name?`, `description?` | 10/min |
+| POST | `/repositories/import` | Import from GitHub — `{url, name?, description?, branch?}` | 5/min |
+| GET | `/repositories/{id}/status` | Poll async ingestion progress | 60/min |
+| PUT | `/repositories/{id}` | Update name / description | 20/min |
+| DELETE | `/repositories/{id}` | Delete repository and all indexed chunks | 10/min |
+| POST | `/repositories/{id}/reindex` | Re-index from new ZIP (incremental, MD5 diff) | 5/min |
+| GET | `/repositories/{id}/symbols` | Symbol lookup — `?name=foo&type=function\|class` | 60/min |
+| GET | `/repositories/{id}/stats` | Chunk count and indexed status | 60/min |
+
+**Upload / Import / Reindex** return `202 Accepted` immediately. Poll `/repositories/{id}/status` to track progress.
+
+```json
+// GET /repositories/{id}/status response
+{
+  "id": "string",
+  "name": "string",
+  "status": "pending | indexing | indexed | failed",
+  "processing": { "files_processed": 42, "chunks_created": 318 },
+  "error": "string (present only on failure)"
+}
+```
 
 ### Chat
 
-| Method | Path | Notes | Rate Limit |
+| Method | Path | Description | Rate Limit |
 |---|---|---|---|
-| POST | `/chat/sessions` | Body: `{repository_id}` | 10/min |
-| GET | `/chat/sessions` | Query: `repository_id?`, `limit?` | 30/min |
-| GET | `/chat/sessions/{id}` | Full session with messages | 30/min |
-| GET | `/chat/sessions/{id}/history` | Query: `limit?` | 30/min |
-| DELETE | `/chat/sessions/{id}` | — | 10/min |
-| POST | `/chat/query` | Body: `{question, repository_id, session_id?, limit?}` | 10/min |
-| POST | `/chat/query/stream` | Same body as `/query` — returns `text/event-stream` | 10/min |
+| POST | `/chat/sessions` | Create session — `{repository_id}` | 10/min |
+| GET | `/chat/sessions` | List sessions — `?repository_id&limit` | 30/min |
+| GET | `/chat/sessions/{id}` | Get session with full message history | 30/min |
+| GET | `/chat/sessions/{id}/history` | Recent messages — `?limit` | 30/min |
+| DELETE | `/chat/sessions/{id}` | Delete session | 10/min |
+| POST | `/chat/query` | Ask a question (blocking) | 10/min |
+| POST | `/chat/query/stream` | Ask a question (SSE streaming) | 10/min |
 
-#### SSE Event Format (`/chat/query/stream`)
-
+**Query body:**
+```json
+{
+  "question": "string",
+  "repository_id": "string",
+  "session_id": "string (optional — enables multi-turn memory)",
+  "limit": 5
+}
 ```
-data: {"type": "token", "token": "...", "answer": "<accumulated so far>"}
-data: {"type": "done",  "answer": "<full answer>", "sources": [...], "chunks_used": N}
-data: {"type": "error", "answer": "...", "error": "rate_limit|api_error|unknown"}
-```
 
-#### `/chat/query` Response Shape
-
+**`/chat/query` response:**
 ```json
 {
   "answer": "string",
-  "sources": [{"file_path": "...", "start_line": 0, "end_line": 0, "chunk_type": "...", "name": "...", "score": 0.0}],
+  "sources": [
+    {
+      "file_path": "src/auth.py",
+      "start_line": 42,
+      "end_line": 67,
+      "chunk_type": "function",
+      "name": "verify_token",
+      "score": 0.91
+    }
+  ],
   "chunks_found": 5,
   "citation_valid": true,
   "citation_warnings": [],
@@ -363,30 +266,52 @@ data: {"type": "error", "answer": "...", "error": "rate_limit|api_error|unknown"
 }
 ```
 
+**SSE event format (`/chat/query/stream`):**
+```
+data: {"type": "token",  "token": "...", "answer": "<accumulated>"}
+data: {"type": "done",   "answer": "<full>", "sources": [...], "citation_valid": true}
+data: {"type": "error",  "error": "rate_limit | api_error | unknown"}
+```
+
 ### System
 
 | Method | Path | Response |
 |---|---|---|
 | GET | `/` | `{"message": "API is running"}` |
-| GET | `/health` | `{"status": "healthy|unhealthy", "database": "connected|disconnected: ..."}` |
+| GET | `/health` | `{"status": "healthy", "database": "connected"}` |
+
+---
+
+## Deployment
+
+See [docs/deployment.md](docs/deployment.md) for step-by-step instructions covering MongoDB Atlas, Railway/Render (backend), and Vercel (frontend).
+
+**Backend → Render or Railway**
+```
+Build command: pip install -r backend/requirements.txt
+Start command: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+```
+Set environment variables in the platform dashboard. The `Procfile` in the project root is pre-configured.
+
+**Frontend → Vercel**
+- Root directory: `frontend`
+- Framework: Vite (auto-detected)
+- Environment variable: `VITE_API_URL` = your backend URL
 
 ---
 
 ## Testing
 
 ```bash
-# From project root (venv active)
 python -m pytest backend/tests/ -q
 ```
 
-**41 tests in two files:**
+41 tests, no external services required (MongoDB and OpenAI are fully mocked).
 
-| File | Tests | What they cover |
+| File | Tests | Coverage |
 |---|---|---|
-| `backend/tests/test_unit.py` | 21 | JWT roundtrip and edge cases (4), CodeChunker AST extraction and token splitting (12), RRF scoring algorithm (5) |
-| `backend/tests/test_api.py` | 20 | Auth register/login (6), repository CRUD and ownership (5), chat session lifecycle (4), auth edge cases (2), root and health endpoints (2) + 1 |
-
-All API tests use `AsyncClient` with MongoDB and OpenAI mocked — no external services required to run them.
+| `test_unit.py` | 21 | JWT roundtrip + edge cases, CodeChunker AST extraction, RRF scoring algorithm |
+| `test_api.py` | 20 | Auth register/login, repository CRUD + ownership, chat session lifecycle, health + root |
 
 ---
 
@@ -395,120 +320,90 @@ All API tests use `AsyncClient` with MongoDB and OpenAI mocked — no external s
 ```
 .
 ├── backend/
-│   ├── main.py                   # FastAPI app — lifespan, middleware, router registration
-│   ├── database.py               # MongoDB motor singleton
+│   ├── main.py                       # FastAPI app — lifespan, middleware, routers
+│   ├── database.py                   # MongoDB motor singleton
 │   ├── requirements.txt
-│   ├── .env.example
+│   ├── .env.example                  # Fully annotated environment template
 │   ├── api/
-│   │   ├── auth.py               # POST /auth/register, /auth/login
-│   │   ├── repositories.py       # Repo CRUD + upload + import + reindex + symbols + stats
-│   │   └── chat.py               # Sessions CRUD + POST /query + POST /query/stream (SSE)
+│   │   ├── auth.py                   # POST /auth/register, /auth/login
+│   │   ├── repositories.py           # Repo CRUD + upload + import + reindex + symbols + status
+│   │   └── chat.py                   # Sessions CRUD + /query + /query/stream (SSE)
 │   ├── auth/
-│   │   ├── jwt.py                # create_access_token, verify_token (HS256)
-│   │   └── dependencies.py       # get_current_user FastAPI dependency
+│   │   ├── jwt.py                    # create_access_token, verify_token (HS256)
+│   │   └── dependencies.py           # get_current_user FastAPI dependency
 │   ├── middleware/
-│   │   ├── error_handlers.py     # Exception → structured JSON response
-│   │   └── rate_limiter.py       # SlowAPI instance
+│   │   ├── error_handlers.py         # Exception → structured JSON
+│   │   └── rate_limiter.py           # SlowAPI instance
 │   ├── models/
-│   │   ├── repository.py         # RepositoryCreate, RepositoryImport, RepositoryResponse
-│   │   └── chat.py               # Chat session Pydantic models
+│   │   ├── repository.py             # Pydantic models: Create, Import, Update, Response
+│   │   └── chat.py                   # Chat session Pydantic models
 │   ├── services/
-│   │   ├── file_scanner.py       # scan_directory — 15 file extensions, skips venv/node_modules
-│   │   ├── ast_parser.py         # Python ast → functions, classes, imports with line numbers
-│   │   ├── treesitter_parser.py  # tree-sitter → JS/TS/Go/Java/Rust/Ruby symbol extraction
-│   │   ├── chunker.py            # CodeChunker — AST-aware chunking + line-based fallback
-│   │   ├── embedding.py          # OpenAI text-embedding-3-small batch embedding
-│   │   ├── vector_store.py       # $vectorSearch (HNSW) + in-memory cosine fallback
-│   │   ├── keyword_search.py     # MongoDB $text compound index search + symbol lookup
-│   │   ├── hybrid_search.py      # RRF fusion + Cohere re-rank (heuristic fallback)
-│   │   ├── llm_service.py        # GPT answer generation, streaming, citation validation
-│   │   ├── chat_service.py       # Session + message CRUD
-│   │   ├── processor.py          # Ingestion orchestrator + incremental re-index
-│   │   └── rag_pipeline.py       # Query + streaming pipeline orchestrator
+│   │   ├── file_scanner.py           # Directory walker — 15 extensions, skips venv/node_modules
+│   │   ├── ast_parser.py             # Python ast — functions, classes, imports + line numbers
+│   │   ├── treesitter_parser.py      # tree-sitter — JS/TS/Go/Java/Rust/Ruby symbol extraction
+│   │   ├── chunker.py                # AST-aware chunking + token-based overlap + line fallback
+│   │   ├── embedding.py              # Thin wrapper over EmbeddingProvider
+│   │   ├── vector_store.py           # $vectorSearch HNSW + in-memory cosine fallback
+│   │   ├── keyword_search.py         # MongoDB $text compound index + symbol lookup
+│   │   ├── hybrid_search.py          # RRF fusion + Cohere/BM25 reranking
+│   │   ├── llm_service.py            # Streaming answer gen + citation validation
+│   │   ├── summary.py                # Optional LLM chunk summaries (ENABLE_CHUNK_SUMMARIES)
+│   │   ├── chat_service.py           # Session + message CRUD
+│   │   ├── processor.py              # Ingestion orchestrator + incremental re-index
+│   │   ├── rag_pipeline.py           # Query pipeline orchestrator
+│   │   └── providers/
+│   │       ├── base.py               # LLMProvider + EmbeddingProvider abstract interfaces
+│   │       ├── openai_provider.py    # OpenAI LLM + embedding implementations
+│   │       ├── anthropic_provider.py # Anthropic Claude LLM implementation
+│   │       └── factory.py            # get_llm_provider(), get_embedding_provider()
 │   └── tests/
-│       ├── conftest.py           # Fixtures: mock_db, test_client, auth_headers
-│       ├── test_unit.py          # JWT, CodeChunker, RRF (21 tests)
-│       └── test_api.py           # API integration (20 tests, full mock isolation)
+│       ├── conftest.py               # Fixtures: mock_db, test_client, auth_headers
+│       ├── test_unit.py              # JWT, CodeChunker, RRF (21 tests)
+│       └── test_api.py               # API integration — full mock isolation (20 tests)
 │
 ├── frontend/
 │   └── src/
-│       ├── App.jsx               # SPA — auth, upload, import, chat with session sidebar, streaming
-│       ├── App.css               # Two-column responsive layout
-│       └── main.jsx              # React entry point
+│       ├── App.jsx                   # SPA — auth, upload, import, chat, session sidebar, SSE
+│       ├── App.css                   # Two-column responsive layout
+│       └── main.jsx                  # React entry point
 │
-├── Procfile                      # Render/Railway: uvicorn backend.main:app
-├── pytest.ini                    # asyncio_mode=auto, testpaths=backend/tests
-└── README.md
+├── Procfile                          # Render/Railway: uvicorn backend.main:app
+├── pytest.ini                        # asyncio_mode=auto, testpaths=backend/tests
+├── ARCHITECTURE.md                   # Technical deep dive with component diagrams
+├── CONTRIBUTING.md                   # Development setup and contribution guidelines
+└── docs/
+    ├── deployment.md                 # MongoDB Atlas, Render, Vercel step-by-step
+    ├── search-pipeline.md            # Hybrid search system internals
+    └── provider-architecture.md      # LLM/embedding provider abstraction guide
 ```
 
 ---
 
-## Current Status
+## Roadmap
 
-### Fully Implemented
-
-| Feature | Notes |
-|---|---|
-| ZIP upload + full indexing | Upload → extract → parse → chunk → embed → store |
-| GitHub URL import | `git clone --depth 1` any public repo |
-| Incremental re-indexing | MD5 hash diff — only re-embeds changed files |
-| Multi-language parsing | Python (AST), JS/TS/Go/Java/Rust (tree-sitter), line-based fallback |
-| Atlas $vectorSearch | HNSW with in-memory cosine fallback |
-| Keyword search | MongoDB $text compound index |
-| Hybrid search (RRF) | Reciprocal Rank Fusion, k=60 |
-| Cohere re-ranking | Cross-encoder with heuristic fallback |
-| Citation enforcement | File path validation in LLM answers |
-| LLM answer generation | gpt-4o-mini default, configurable |
-| Streaming responses | SSE endpoint + frontend ReadableStream consumer |
-| Multi-turn chat sessions | MongoDB-backed, 10-message history window |
-| JWT authentication | HS256, 24h expiry, bcrypt passwords |
-| Per-IP rate limiting | SlowAPI on all endpoints |
-| Symbol search API | Exact function/class name lookup |
-| Repository stats API | Chunk count and indexed status |
-| Markdown rendering | react-markdown for assistant messages |
-| 41 automated tests | Full mock isolation, no external services |
-| Deployment configs | Procfile (Render/Railway), vercel.json (Vercel) |
-
-### Requires Manual Setup
-
-| Item | What to do |
-|---|---|
-| MongoDB Atlas Vector Search index | Create `vector_search_index` in Atlas UI (see instructions above). Without it, in-memory cosine fallback is used automatically. |
-| Cohere re-ranking | Set `COHERE_API_KEY` in environment. Without it, heuristic fallback is used. |
-| GitHub private repos | Not supported without additional GitHub token configuration. |
-
-### Out of Scope
-
-| Feature | Why |
-|---|---|
-| GitHub webhook auto-indexing | Requires a public webhook URL, GitHub App, and persistent server |
-| JWT token refresh | Users re-authenticate after 24 hours |
-| Observability (Langfuse/OTEL) | Useful in production; not in current scope |
-| Dedicated vector store (Qdrant) | MongoDB Atlas handles current scale; migrate if >10K chunks/repo |
-| Neo4j symbol dependency graph | Tracks cross-file call relationships; significant architectural addition |
-| Cross-repository search | Single-repo scope by design |
+| Feature | Priority | Notes |
+|---|---|---|
+| Docker Compose local setup | Medium | Single-command local dev environment |
+| JWT refresh tokens | Low | Currently re-login after 24h |
+| Webhook-based auto-indexing | Low | Requires GitHub App + persistent server |
+| Cross-repository search | Low | Current scope is single-repo |
+| Observability (OpenTelemetry) | Low | Tracing for LLM calls and search latency |
+| Additional embedding providers | Low | Cohere/Voyage embeddings via EmbeddingProvider interface |
 
 ---
 
-## Troubleshooting
+## Documentation
 
-**"No code files found in repository"**  
-The uploaded ZIP contains no files with supported extensions (`.py`, `.js`, `.ts`, `.go`, `.java`, `.rs`, etc.). Check `backend/services/file_scanner.py` for the full extension list.
+| Document | Description |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Technical architecture with Mermaid diagrams for every major flow |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, branching conventions, PR guidelines |
+| [docs/deployment.md](docs/deployment.md) | Step-by-step deployment: Atlas, Render/Railway, Vercel |
+| [docs/search-pipeline.md](docs/search-pipeline.md) | Hybrid search internals: RRF, BM25, Cohere |
+| [docs/provider-architecture.md](docs/provider-architecture.md) | LLM/embedding provider system and how to add new providers |
 
-**GitHub import fails with clone error**  
-Ensure the repo URL is public and follows `https://github.com/owner/repo` format. `git` must be installed on the server. Private repos are not supported.
+---
 
-**Atlas Vector Search not returning results**  
-Verify the index name is exactly `vector_search_index`. Verify `repository_id` is declared as a `filter` field in the index JSON. If the index shows as "pending", wait for it to become active.
+## License
 
-**Streaming answers not appearing**  
-Verify `ALLOWED_ORIGINS` includes your frontend URL (needed for SSE CORS). The browser must support `ReadableStream` (all modern browsers do).
-
-**Rate limit 429 errors**  
-SlowAPI limits requests per IP per minute. Limits are defined per endpoint in `backend/api/*.py`. Adjust them in development by editing the `@limiter.limit(...)` decorators.
-
-**JWT expired / 401 on all requests**  
-Tokens expire after 24 hours. Log out and log back in. No refresh token flow is implemented.
-
-**Cohere re-ranking slow or failing**  
-The free tier (1,000 req/month) rate-limits aggressively. If calls fail, the system falls back to heuristic re-ranking automatically — no user-visible error.
+MIT — see [LICENSE](LICENSE).
