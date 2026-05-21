@@ -32,17 +32,24 @@ async def lifespan(app: FastAPI):
     
     from backend.services.vector_store import VectorStore
     from backend.services.keyword_search import KeywordSearchService
-    
+    from backend.services.processor import RepositoryProcessor
+    from backend.services.rag_pipeline import RAGPipeline
+
     vector_store = VectorStore()
     await vector_store.ensure_indexes()
-    
+
     keyword_search = KeywordSearchService()
     await keyword_search.ensure_indexes()
-    
-    print("Indexes initialized")
-    
+
+    # Shared singletons — one API client / connection pool per service type
+    app.state.processor = RepositoryProcessor()
+    app.state.keyword_service = keyword_search
+    app.state.rag_pipeline = RAGPipeline()
+
+    print("Indexes and services initialized")
+
     yield
-    
+
     await Database.disconnect()
     print("Disconnected from MongoDB")
 
