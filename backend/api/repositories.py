@@ -209,9 +209,9 @@ async def upload_repository(
         result = await db.repositories.insert_one(doc)
         repo_id = str(result.inserted_id)
         
-        processor = RepositoryProcessor()
+        processor: RepositoryProcessor = request.app.state.processor
         processing_result = await processor.process_repository(repo_id, extract_base)
-        
+
         return {
             "id": repo_id,
             "name": doc["name"],
@@ -269,7 +269,7 @@ async def reindex_repository(
         if len(root_content) == 1 and os.path.isdir(os.path.join(temp_dir, root_content[0])):
             extract_base = os.path.join(temp_dir, root_content[0])
 
-        processor = RepositoryProcessor()
+        processor: RepositoryProcessor = request.app.state.processor
         result = await processor.process_repository_incremental(repo_id, extract_base)
 
     await db.repositories.update_one(
@@ -390,7 +390,7 @@ async def delete_repository(
             detail="You do not have access to delete this repository"
         )
 
-    processor = RepositoryProcessor()
+    processor: RepositoryProcessor = request.app.state.processor
     await processor.delete_repository_data(repo_id)
 
     await db.repositories.delete_one({"_id": ObjectId(repo_id)})
@@ -452,7 +452,7 @@ async def search_symbols(
             detail="name query parameter is required"
         )
 
-    keyword_service = KeywordSearchService()
+    keyword_service: KeywordSearchService = request.app.state.keyword_service
 
     symbol_type = (type or "").lower()
 
@@ -517,7 +517,7 @@ async def get_repository_stats(
             detail="You do not have access to this repository"
         )
 
-    processor = RepositoryProcessor()
+    processor: RepositoryProcessor = request.app.state.processor
     stats = await processor.get_repository_stats(repo_id)
 
     return {
@@ -600,7 +600,7 @@ async def import_repository(
         repo_id = str(result.inserted_id)
 
         try:
-            processor = RepositoryProcessor()
+            processor: RepositoryProcessor = request.app.state.processor
             processing_result = await processor.process_repository(repo_id, clone_path)
         except Exception as exc:
             await db.repositories.delete_one({"_id": result.inserted_id})
