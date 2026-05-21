@@ -225,9 +225,6 @@ async def get_session_history(
     }
 
 
-rag_pipeline = RAGPipeline()
-
-
 @router.post("/query", response_model=ChatQueryResponse)
 @limiter.limit("10/minute")
 async def chat_query(
@@ -259,6 +256,7 @@ async def chat_query(
                 detail="You do not have access to this session"
             )
 
+    rag_pipeline: RAGPipeline = request.app.state.rag_pipeline
     result = await rag_pipeline.query(
         question=chat_request.question,
         repository_id=chat_request.repository_id,
@@ -317,6 +315,8 @@ async def chat_query_stream(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have access to this session"
             )
+
+    rag_pipeline: RAGPipeline = request.app.state.rag_pipeline
 
     async def event_generator():
         full_answer = ""
