@@ -6,7 +6,7 @@ Endpoints for repository management.
 Phase 13: Added JWT authentication and authorization
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 from datetime import datetime
@@ -31,6 +31,47 @@ from backend.services.keyword_search import KeywordSearchService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
+
+
+async def _run_ingestion(
+    repo_id: str,
+    extract_base: str,
+    temp_dir: str,
+    processor: RepositoryProcessor,
+    incremental: bool = False,
+) -> None:
+    """Background task: run ingestion and update repository status.
+
+    Owns the temp_dir lifecycle — always cleans up on exit regardless of outcome.
+    """
+    db = Database.get_db()
+    try:
+        await db.repositories.update_one(
+            {"_id": ObjectId(repo_id)},
+            {"$set": {"status": "indexing"}},
+        )
+        if incremental:
+            result = await processor.process_repository_incremental(repo_id, extract_base)
+        else:
+            result = await processor.process_repository(repo_id, extract_base)
+
+        final_status = "indexed" if result.get("status") == "success" else "failed"
+        await db.repositories.update_one(
+            {"_id": ObjectId(repo_id)},
+            {"$set": {
+                "status": final_status,
+                "processing": result,
+                "updated_at": datetime.now(),
+            }},
+        )
+    except Exception as exc:
+        logger.error("Ingestion background task failed for %s: %s", repo_id, exc)
+        await db.repositories.update_one(
+            {"_id": ObjectId(repo_id)},
+            {"$set": {"status": "failed", "error": str(exc), "updated_at": datetime.now()}},
+        )
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def serialize_doc(doc: dict) -> dict:
@@ -143,90 +184,92 @@ async def create_repository(
     return doc
 
 
-@router.post("/upload", status_code=status.HTTP_201_CREATED)
+@router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("10/minute")
 async def upload_repository(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    POST /repositories/upload - Upload repository as ZIP file
-    
-    Accepts a ZIP file containing code files.
-    Processes and indexes the uploaded code.
-    
-    Args:
-        file: ZIP file containing code
-        name: Repository name (optional, extracted from ZIP if not provided)
-        description: Repository description
-    
-    Returns:
-        Created repository with processing stats
-    
-    Requires authentication.
-    Rate limit: 10 requests per minute.
+    """POST /repositories/upload — Upload repository as ZIP and index asynchronously.
+
+    Extracts the ZIP, inserts the repository record with status='pending', and
+    schedules indexing as a background task. Returns immediately (HTTP 202).
+
+    Poll GET /repositories/{id}/status to track progress.
     """
     if not file.filename.endswith('.zip'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only ZIP files are accepted"
         )
-    
+
     db = Database.get_db()
     user_id = current_user.get("user_id")
-    
-    with tempfile.TemporaryDirectory() as temp_dir:
+
+    # mkdtemp instead of TemporaryDirectory — background task owns cleanup.
+    temp_dir = tempfile.mkdtemp()
+    try:
         zip_path = os.path.join(temp_dir, file.filename)
-        
         with open(zip_path, 'wb') as f:
             shutil.copyfileobj(file.file, f)
-        
+
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(temp_dir)
-        
-        root_content = os.listdir(temp_dir)
+
+        root_content = [e for e in os.listdir(temp_dir) if e != os.path.basename(zip_path)]
         subdirectory = None
         extract_base = temp_dir
-        
         if len(root_content) == 1 and os.path.isdir(os.path.join(temp_dir, root_content[0])):
             subdirectory = root_content[0]
             extract_base = os.path.join(temp_dir, subdirectory)
-        
+
         repo_name = name or subdirectory or file.filename.replace('.zip', '')
-        
+
         doc = {
             "name": repo_name,
             "description": description or "",
             "user_id": user_id,
-            "file_path": extract_base,
+            "status": "pending",
             "created_at": datetime.now(),
-            "updated_at": None
+            "updated_at": None,
         }
-        
+
         result = await db.repositories.insert_one(doc)
         repo_id = str(result.inserted_id)
-        
-        processor: RepositoryProcessor = request.app.state.processor
-        processing_result = await processor.process_repository(repo_id, extract_base)
+
+        background_tasks.add_task(
+            _run_ingestion,
+            repo_id,
+            extract_base,
+            temp_dir,
+            request.app.state.processor,
+            False,
+        )
 
         return {
             "id": repo_id,
-            "name": doc["name"],
+            "name": repo_name,
             "description": doc["description"],
+            "status": "pending",
             "created_at": doc["created_at"],
-            "updated_at": doc["updated_at"],
-            "processing": processing_result
+            "updated_at": None,
         }
 
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
 
-@router.post("/{repo_id}/reindex", status_code=status.HTTP_200_OK)
+
+@router.post("/{repo_id}/reindex", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("5/minute")
 async def reindex_repository(
     request: Request,
     repo_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
@@ -234,7 +277,10 @@ async def reindex_repository(
 
     Computes MD5 content hashes and skips files whose hash matches the
     stored value. Only changed and new files are re-embedded; chunks for
-    removed files are deleted. Rate limit: 5 requests per minute.
+    removed files are deleted. Returns 202 immediately — poll
+    GET /repositories/{id}/status to track progress.
+
+    Rate limit: 5 requests per minute.
     """
     if not file.filename.endswith(".zip"):
         raise HTTPException(
@@ -256,7 +302,8 @@ async def reindex_repository(
     if repo.get("user_id") and repo["user_id"] != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this repository")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    temp_dir = tempfile.mkdtemp()
+    try:
         zip_path = os.path.join(temp_dir, file.filename)
         with open(zip_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
@@ -264,20 +311,30 @@ async def reindex_repository(
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_dir)
 
-        root_content = os.listdir(temp_dir)
+        root_content = [e for e in os.listdir(temp_dir) if e != os.path.basename(zip_path)]
         extract_base = temp_dir
         if len(root_content) == 1 and os.path.isdir(os.path.join(temp_dir, root_content[0])):
             extract_base = os.path.join(temp_dir, root_content[0])
 
-        processor: RepositoryProcessor = request.app.state.processor
-        result = await processor.process_repository_incremental(repo_id, extract_base)
+        await db.repositories.update_one(
+            {"_id": ObjectId(repo_id)},
+            {"$set": {"status": "pending", "updated_at": datetime.now()}},
+        )
 
-    await db.repositories.update_one(
-        {"_id": ObjectId(repo_id)},
-        {"$set": {"updated_at": datetime.now()}}
-    )
+        background_tasks.add_task(
+            _run_ingestion,
+            repo_id,
+            extract_base,
+            temp_dir,
+            request.app.state.processor,
+            True,
+        )
 
-    return {"repository_id": repo_id, **result}
+        return {"repository_id": repo_id, "status": "pending"}
+
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
 
 
 @router.put("/{repo_id}", response_model=RepositoryResponse)
@@ -527,25 +584,70 @@ async def get_repository_stats(
     }
 
 
+@router.get("/{repo_id}/status")
+@limiter.limit("60/minute")
+async def get_repository_status(
+    request: Request,
+    repo_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """GET /repositories/{id}/status — Poll async ingestion progress.
+
+    Returns:
+        id, name, status — one of: pending | indexing | indexed | failed
+        processing — result dict from the processor (present once indexed)
+        error — error message (present when status is 'failed')
+
+    Rate limit: 60 requests per minute.
+    """
+    db = Database.get_db()
+    user_id = current_user.get("user_id")
+
+    try:
+        repo = await db.repositories.find_one({"_id": ObjectId(repo_id)})
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid repository ID format")
+
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repo_id}' not found")
+
+    if repo.get("user_id") and repo["user_id"] != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this repository")
+
+    response: dict = {
+        "id": repo_id,
+        "name": repo.get("name", ""),
+        "status": repo.get("status", "unknown"),
+    }
+    if "processing" in repo:
+        response["processing"] = repo["processing"]
+    if "error" in repo:
+        response["error"] = repo["error"]
+
+    return response
+
+
 _GITHUB_URL_RE = re.compile(
     r'^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?$'
 )
 
 
-@router.post("/import", status_code=status.HTTP_201_CREATED)
+@router.post("/import", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("5/minute")
 async def import_repository(
     request: Request,
     payload: RepositoryImport,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user)
 ):
-    """Clone a public GitHub repository and index it.
+    """Clone a GitHub repository and index it asynchronously.
 
-    Accepts a GitHub HTTPS URL, clones with depth=1 into a temporary
-    directory, runs the standard RepositoryProcessor pipeline, then
-    cleans up the clone. Private repositories are not supported without
-    a configured GitHub token.
+    Validates the URL and performs the git clone synchronously (so auth/
+    network errors surface immediately), then schedules indexing as a
+    background task and returns 202. Poll GET /repositories/{id}/status
+    to track progress.
 
+    Private repositories require GITHUB_TOKEN to be configured.
     Rate limit: 5 requests per minute (clone is network-bound).
     """
     url = payload.url.strip().rstrip("/")
@@ -555,33 +657,53 @@ async def import_repository(
     if not _GITHUB_URL_RE.match(url + "/"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="URL must be a public GitHub repository (https://github.com/owner/repo)"
+            detail="URL must be a GitHub repository (https://github.com/owner/repo)"
         )
+
+    # Inject GITHUB_TOKEN for private repository access.
+    # The token is embedded in the URL so it is never logged by git output.
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    clone_url = url
+    if github_token:
+        # https://github.com/owner/repo → https://<token>@github.com/owner/repo
+        clone_url = url.replace("https://", f"https://{github_token}@", 1)
 
     repo_slug = url.split("/")[-1]
     repo_name = payload.name or repo_slug
     db = Database.get_db()
     user_id = current_user.get("user_id")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    # mkdtemp — background task owns cleanup via _run_ingestion finally block.
+    temp_dir = tempfile.mkdtemp()
+    try:
         clone_path = os.path.join(temp_dir, repo_slug)
 
+        clone_cmd = ["git", "clone", "--depth", "1"]
+        if payload.branch:
+            clone_cmd += ["--branch", payload.branch]
+        clone_cmd += [clone_url, clone_path]
+
         proc = await asyncio.create_subprocess_exec(
-            "git", "clone", "--depth", "1", url, clone_path,
+            *clone_cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         except asyncio.TimeoutError:
             proc.kill()
+            shutil.rmtree(temp_dir, ignore_errors=True)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Clone timed out after 120 seconds"
             )
 
         if proc.returncode != 0:
+            # Scrub the token from stderr before returning it to the client.
             error_msg = stderr.decode(errors="replace").strip()
+            if github_token:
+                error_msg = error_msg.replace(github_token, "***")
+            shutil.rmtree(temp_dir, ignore_errors=True)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Clone failed: {error_msg}"
@@ -592,30 +714,35 @@ async def import_repository(
             "description": payload.description or f"Imported from {url}",
             "user_id": user_id,
             "source_url": url,
+            "status": "pending",
             "created_at": datetime.now(),
-            "updated_at": None
+            "updated_at": None,
         }
 
         result = await db.repositories.insert_one(doc)
         repo_id = str(result.inserted_id)
 
-        try:
-            processor: RepositoryProcessor = request.app.state.processor
-            processing_result = await processor.process_repository(repo_id, clone_path)
-        except Exception as exc:
-            await db.repositories.delete_one({"_id": result.inserted_id})
-            logger.error("Processing failed for import %s: %s", url, exc)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Indexing failed: {exc}"
-            )
+        background_tasks.add_task(
+            _run_ingestion,
+            repo_id,
+            clone_path,
+            temp_dir,
+            request.app.state.processor,
+            False,
+        )
 
-    return {
-        "id": repo_id,
-        "name": repo_name,
-        "description": doc["description"],
-        "source_url": url,
-        "created_at": doc["created_at"],
-        "updated_at": None,
-        "processing": processing_result
-    }
+        return {
+            "id": repo_id,
+            "name": repo_name,
+            "description": doc["description"],
+            "source_url": url,
+            "status": "pending",
+            "created_at": doc["created_at"],
+            "updated_at": None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
