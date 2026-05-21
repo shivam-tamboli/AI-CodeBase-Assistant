@@ -1,56 +1,70 @@
-from openai import AsyncOpenAI, RateLimitError, APIError
-from typing import List, Dict, Any, AsyncIterator, Optional
+import logging
 import os
+from typing import AsyncIterator, Dict, Any, List, Optional
+
 from dotenv import load_dotenv
+from openai import RateLimitError, APIError
+
+from backend.services.providers.base import LLMProvider
+from backend.services.providers.factory import get_llm_provider
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 
 class LLMService:
-    """Handles LLM interactions for answer generation"""
+    """Generates LLM answers for retrieved code context.
+
+    Delegates to a pluggable LLMProvider so that switching between
+    OpenAI and Anthropic Claude requires only .env changes:
+
+      LLM_PROVIDER=anthropic
+      LLM_MODEL=claude-sonnet-4-6
+      ANTHROPIC_API_KEY=sk-ant-...
+    """
 
     MAX_HISTORY_TOKENS = 2000
 
-    def __init__(self):
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not set in environment variables")
+    _SYSTEM_PROMPT = (
+        "You are an expert code analyst specialising in understanding and "
+        "explaining software codebases.\n\n"
+        "When answering questions:\n"
+        "1. Cite specific file paths and line numbers for every claim\n"
+        "2. Include relevant code snippets from the provided context\n"
+        "3. If the answer is not in the context, clearly say so\n"
+        "4. Provide clear, actionable explanations\n"
+        "5. Use markdown formatting for readability\n"
+        "6. Focus on explaining HOW the code works, not just WHAT it does"
+    )
 
-        self.client = AsyncOpenAI(api_key=api_key)
-        self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    def __init__(self, provider: Optional[LLMProvider] = None):
+        self._provider = provider or get_llm_provider()
         self.temperature = 0.2
         self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2000"))
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
     def _format_context(self, chunks: List[Dict[str, Any]]) -> str:
-        """Format retrieved code chunks for LLM context"""
-        context_parts = []
-
+        parts = []
         for i, chunk in enumerate(chunks, 1):
-            metadata = chunk.get("metadata", {})
-            file_path = metadata.get("file_path", "unknown")
-            start_line = metadata.get("start_line", 0)
-            end_line = metadata.get("end_line", 0)
-            chunk_type = metadata.get("chunk_type", "code")
-            name = metadata.get("name", "")
-
-            header = f"Source {i}: {file_path}:{start_line}-{end_line}"
-            if name:
-                header += f" ({chunk_type}: {name})"
-
-            context_parts.append(
-                f"--- {header} ---\n{chunk.get('content', '')}\n"
+            meta = chunk.get("metadata", {})
+            header = (
+                f"Source {i}: {meta.get('file_path', 'unknown')}"
+                f":{meta.get('start_line', 0)}-{meta.get('end_line', 0)}"
             )
-
-        return "\n".join(context_parts)
+            name = meta.get("name", "")
+            if name:
+                header += f" ({meta.get('chunk_type', 'code')}: {name})"
+            parts.append(f"--- {header} ---\n{chunk.get('content', '')}\n")
+        return "\n".join(parts)
 
     def _truncate_history(
         self, history: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Return the most recent history entries that fit within MAX_HISTORY_TOKENS.
-
-        Removes from the oldest end until the total token count is within budget.
-        Always removes pairs (user + assistant) to keep the conversation coherent.
-        """
+        """Return the most recent history entries within MAX_HISTORY_TOKENS."""
         if not history:
             return []
 
@@ -65,42 +79,23 @@ class LLMService:
 
         truncated = list(history)
         while truncated and token_count(truncated) > self.MAX_HISTORY_TOKENS:
-            # Drop the oldest pair to preserve conversation coherence
             truncated = truncated[2:] if len(truncated) >= 2 else truncated[1:]
-
         return truncated
 
-    def _build_prompt(
+    def _build_messages(
         self,
         query: str,
         context: str,
-        chat_history: Optional[List[Dict[str, Any]]] = None
+        chat_history: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, str]]:
-        """Build the messages array for the LLM API call.
+        """Build the conversation messages array (without system prompt).
 
-        History is passed as native alternating user/assistant turns so the
-        model uses its fine-tuned multi-turn attention rather than parsing
-        injected text. History is truncated to MAX_HISTORY_TOKENS from the
-        oldest end before inclusion.
+        History is passed as native alternating user/assistant turns.
+        The final user turn contains the retrieved context and the query.
         """
-        system_prompt = (
-            "You are an expert code analyst specialising in understanding and "
-            "explaining software codebases.\n\n"
-            "When answering questions:\n"
-            "1. Cite specific file paths and line numbers for every claim\n"
-            "2. Include relevant code snippets from the provided context\n"
-            "3. If the answer is not in the context, clearly say so\n"
-            "4. Provide clear, actionable explanations\n"
-            "5. Use markdown formatting for readability\n"
-            "6. Focus on explaining HOW the code works, not just WHAT it does"
-        )
+        messages: List[Dict[str, str]] = []
 
-        messages: List[Dict[str, str]] = [
-            {"role": "system", "content": system_prompt}
-        ]
-
-        truncated_history = self._truncate_history(chat_history or [])
-        for msg in truncated_history:
+        for msg in self._truncate_history(chat_history or []):
             role = msg.get("role", "user")
             if role not in ("user", "assistant"):
                 continue
@@ -116,26 +111,18 @@ class LLMService:
             "you can explain from the available context."
         )
         messages.append({"role": "user", "content": user_content})
-
         return messages
 
     def _validate_citations(
         self,
         answer: str,
-        retrieved_chunks: List[Dict[str, Any]]
+        retrieved_chunks: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Validate that file paths cited in the answer exist in retrieved chunks.
-
-        Extracts all .py paths from the answer text and checks each against
-        the file_path metadata of the chunks that were actually retrieved.
-        Returns a dict with citation_valid flag and list of unverified paths.
-        """
+        """Check that file paths cited in the answer appear in retrieved chunks."""
         import re
 
         _INDEXED_EXTENSIONS = r'\.(?:py|js|ts|jsx|tsx|go|java|rs|rb)'
-        cited_files = set(re.findall(
-            r'[\w/._-]+' + _INDEXED_EXTENSIONS, answer
-        ))
+        cited_files = set(re.findall(r'[\w/._-]+' + _INDEXED_EXTENSIONS, answer))
 
         source_paths = {
             chunk.get("metadata", {}).get("file_path", "")
@@ -147,146 +134,135 @@ class LLMService:
             f for f in cited_files
             if f not in source_paths and f.split("/")[-1] not in source_basenames
         ]
-
         return {
             "cited_files": sorted(cited_files),
             "hallucinated_files": hallucinated,
-            "citation_valid": len(hallucinated) == 0
+            "citation_valid": len(hallucinated) == 0,
         }
+
+    def _build_sources(
+        self, retrieved_chunks: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        sources = []
+        for chunk in retrieved_chunks:
+            meta = chunk.get("metadata", {})
+            sources.append({
+                "file_path": meta.get("file_path", ""),
+                "start_line": meta.get("start_line", 0),
+                "end_line": meta.get("end_line", 0),
+                "chunk_type": meta.get("chunk_type", "code"),
+                "name": meta.get("name", ""),
+                "score": chunk.get("final_score", chunk.get("hybrid_score", 0)),
+            })
+        return sources
+
+    def _append_citation_warning(
+        self, answer: str, citation_check: Dict[str, Any]
+    ) -> str:
+        if citation_check["hallucinated_files"]:
+            unverified = ", ".join(
+                f"`{f}`" for f in citation_check["hallucinated_files"]
+            )
+            answer += (
+                f"\n\n> **Note**: The following file references could not be "
+                f"verified against the indexed source: {unverified}"
+            )
+        return answer
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def generate_answer(
         self,
         query: str,
         retrieved_chunks: List[Dict[str, Any]],
-        chat_history: Optional[List[Dict[str, Any]]] = None
+        chat_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Generate answer from retrieved context"""
-
+        """Generate a complete answer from retrieved context."""
         if not retrieved_chunks:
             return {
-                "answer": "No relevant code found for your question. Try rephrasing or asking about a different aspect of the codebase.",
-                "sources": []
+                "answer": (
+                    "No relevant code found for your question. "
+                    "Try rephrasing or asking about a different aspect of the codebase."
+                ),
+                "sources": [],
             }
 
         try:
             context = self._format_context(retrieved_chunks)
-            messages = self._build_prompt(query, context, chat_history)
+            messages = self._build_messages(query, context, chat_history)
 
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            answer = await self._provider.complete(
+                system=self._SYSTEM_PROMPT,
                 messages=messages,
+                max_tokens=self.max_tokens,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens
             )
 
-            answer = response.choices[0].message.content
-
             citation_check = self._validate_citations(answer, retrieved_chunks)
-            if citation_check["hallucinated_files"]:
-                unverified = ", ".join(f"`{f}`" for f in citation_check["hallucinated_files"])
-                answer += (
-                    f"\n\n> **Note**: The following file references could not be "
-                    f"verified against the indexed source: {unverified}"
-                )
-
-            sources = []
-            for chunk in retrieved_chunks:
-                metadata = chunk.get("metadata", {})
-                sources.append({
-                    "file_path": metadata.get("file_path", ""),
-                    "start_line": metadata.get("start_line", 0),
-                    "end_line": metadata.get("end_line", 0),
-                    "chunk_type": metadata.get("chunk_type", "code"),
-                    "name": metadata.get("name", ""),
-                    "score": chunk.get("final_score", chunk.get("hybrid_score", 0))
-                })
+            answer = self._append_citation_warning(answer, citation_check)
 
             return {
                 "answer": answer,
-                "sources": sources,
+                "sources": self._build_sources(retrieved_chunks),
                 "chunks_used": len(retrieved_chunks),
                 "citation_valid": citation_check["citation_valid"],
-                "citation_warnings": citation_check["hallucinated_files"]
+                "citation_warnings": citation_check["hallucinated_files"],
             }
 
         except RateLimitError:
             return {
                 "answer": "Rate limit reached. Please wait a moment and try again.",
                 "sources": [],
-                "error": "rate_limit"
+                "error": "rate_limit",
             }
         except APIError as e:
             return {
-                "answer": f"API error occurred: {str(e)}",
+                "answer": f"API error occurred: {e}",
                 "sources": [],
-                "error": "api_error"
+                "error": "api_error",
             }
         except Exception as e:
+            logger.error("LLM generation error: %s", e)
             return {
-                "answer": f"Error generating answer: {str(e)}",
+                "answer": f"Error generating answer: {e}",
                 "sources": [],
-                "error": "unknown"
+                "error": "unknown",
             }
 
     async def generate_streaming_answer(
         self,
         query: str,
         retrieved_chunks: List[Dict[str, Any]],
-        chat_history: Optional[List[Dict[str, Any]]] = None
+        chat_history: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        """Generate answer with streaming responses"""
-
+        """Generate an answer with streaming token events."""
         if not retrieved_chunks:
             yield {
                 "type": "done",
                 "answer": "No relevant code found for your question.",
-                "sources": []
+                "sources": [],
             }
             return
 
         try:
             context = self._format_context(retrieved_chunks)
-            messages = self._build_prompt(query, context, chat_history)
-
-            stream = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                stream=True
-            )
-
-            sources = []
-            for chunk in retrieved_chunks:
-                metadata = chunk.get("metadata", {})
-                sources.append({
-                    "file_path": metadata.get("file_path", ""),
-                    "start_line": metadata.get("start_line", 0),
-                    "end_line": metadata.get("end_line", 0),
-                    "chunk_type": metadata.get("chunk_type", "code"),
-                    "name": metadata.get("name", ""),
-                    "score": chunk.get("final_score", chunk.get("hybrid_score", 0))
-                })
+            messages = self._build_messages(query, context, chat_history)
+            sources = self._build_sources(retrieved_chunks)
 
             full_answer = ""
-
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
-                    full_answer += token
-                    yield {
-                        "type": "token",
-                        "token": token,
-                        "answer": full_answer
-                    }
+            async for token in self._provider.stream(
+                system=self._SYSTEM_PROMPT,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            ):
+                full_answer += token
+                yield {"type": "token", "token": token, "answer": full_answer}
 
             citation_check = self._validate_citations(full_answer, retrieved_chunks)
-            if citation_check["hallucinated_files"]:
-                unverified = ", ".join(f"`{f}`" for f in citation_check["hallucinated_files"])
-                full_answer += (
-                    f"\n\n> **Note**: The following file references could not be "
-                    f"verified against the indexed source: {unverified}"
-                )
+            full_answer = self._append_citation_warning(full_answer, citation_check)
 
             yield {
                 "type": "done",
@@ -301,23 +277,24 @@ class LLMService:
             yield {
                 "type": "error",
                 "answer": "Rate limit reached. Please wait a moment and try again.",
-                "error": "rate_limit"
+                "error": "rate_limit",
             }
         except APIError as e:
             yield {
                 "type": "error",
-                "answer": f"API error occurred: {str(e)}",
-                "error": "api_error"
+                "answer": f"API error occurred: {e}",
+                "error": "api_error",
             }
         except Exception as e:
+            logger.error("Streaming LLM error: %s", e)
             yield {
                 "type": "error",
-                "answer": f"Error: {str(e)}",
-                "error": "unknown"
+                "answer": f"Error: {e}",
+                "error": "unknown",
             }
 
     async def count_tokens(self, text: str) -> int:
-        """Count tokens in text using tiktoken"""
+        """Count tokens in text using tiktoken."""
         try:
             import tiktoken
             enc = tiktoken.encoding_for_model("text-embedding-3-small")
@@ -328,26 +305,20 @@ class LLMService:
     async def estimate_response_tokens(
         self,
         query: str,
-        retrieved_chunks: List[Dict[str, Any]]
+        retrieved_chunks: List[Dict[str, Any]],
     ) -> Dict[str, int]:
-        """Estimate token usage before making API call"""
-
+        """Estimate token usage before making an API call."""
         context = self._format_context(retrieved_chunks)
-
-        system_prompt = """You are an expert code analyst..."""
-        system_tokens = await self.count_tokens(system_prompt)
+        system_tokens = await self.count_tokens(self._SYSTEM_PROMPT)
         context_tokens = await self.count_tokens(context)
         query_tokens = await self.count_tokens(query)
-
-        total_input_tokens = system_tokens + context_tokens + query_tokens
-        estimated_response_tokens = self.max_tokens
-
+        total_input = system_tokens + context_tokens + query_tokens
         return {
             "system_tokens": system_tokens,
             "context_tokens": context_tokens,
             "query_tokens": query_tokens,
-            "total_input_tokens": total_input_tokens,
-            "max_response_tokens": estimated_response_tokens,
-            "total_tokens": total_input_tokens + estimated_response_tokens,
-            "within_limit": total_input_tokens < (8000 - estimated_response_tokens)
+            "total_input_tokens": total_input,
+            "max_response_tokens": self.max_tokens,
+            "total_tokens": total_input + self.max_tokens,
+            "within_limit": total_input < (128_000 - self.max_tokens),
         }
