@@ -43,18 +43,32 @@ class LLMService:
 
         return "\n".join(context_parts)
 
-    def _format_history(self, history: List[Dict[str, Any]]) -> str:
-        """Format chat history for inclusion in prompt"""
+    def _truncate_history(
+        self, history: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Return the most recent history entries that fit within MAX_HISTORY_TOKENS.
+
+        Removes from the oldest end until the total token count is within budget.
+        Always removes pairs (user + assistant) to keep the conversation coherent.
+        """
         if not history:
-            return ""
+            return []
 
-        history_parts = []
-        for msg in history:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
-            history_parts.append(f"{role.upper()}: {content}")
+        import tiktoken
+        try:
+            enc = tiktoken.encoding_for_model("gpt-4o-mini")
+        except KeyError:
+            enc = tiktoken.get_encoding("cl100k_base")
 
-        return "\n\n".join(history_parts)
+        def token_count(msgs: List[Dict]) -> int:
+            return sum(len(enc.encode(m.get("content", ""))) for m in msgs)
+
+        truncated = list(history)
+        while truncated and token_count(truncated) > self.MAX_HISTORY_TOKENS:
+            # Drop the oldest pair to preserve conversation coherence
+            truncated = truncated[2:] if len(truncated) >= 2 else truncated[1:]
+
+        return truncated
 
     def _build_prompt(
         self,
@@ -62,44 +76,48 @@ class LLMService:
         context: str,
         chat_history: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, str]]:
-        """Build prompt with system and user messages"""
+        """Build the messages array for the LLM API call.
 
-        system_prompt = """You are an expert code analyst specializing in understanding and explaining software codebases.
+        History is passed as native alternating user/assistant turns so the
+        model uses its fine-tuned multi-turn attention rather than parsing
+        injected text. History is truncated to MAX_HISTORY_TOKENS from the
+        oldest end before inclusion.
+        """
+        system_prompt = (
+            "You are an expert code analyst specialising in understanding and "
+            "explaining software codebases.\n\n"
+            "When answering questions:\n"
+            "1. Cite specific file paths and line numbers for every claim\n"
+            "2. Include relevant code snippets from the provided context\n"
+            "3. If the answer is not in the context, clearly say so\n"
+            "4. Provide clear, actionable explanations\n"
+            "5. Use markdown formatting for readability\n"
+            "6. Focus on explaining HOW the code works, not just WHAT it does"
+        )
 
-When answering questions:
-1. Cite specific file paths and line numbers for every claim
-2. Include relevant code snippets from the provided context
-3. If the answer isn't in the context, clearly state that
-4. Provide clear, actionable explanations
-5. Use markdown formatting for readability
-6. Focus on explaining HOW the code works, not just WHAT it does
-7. Use conversation history to maintain context in multi-turn conversations"""
-
-        history_text = self._format_history(chat_history) if chat_history else ""
-
-        history_section = f"""
-Previous conversation:
----
-{history_text}
----
-
-""" if history_text else ""
-
-        user_prompt = f"""Based on the following code context from the uploaded repository, answer the user's question.
-
-{history_section}Context:
----
-{context}
----
-
-Question: {query}
-
-Provide your answer with source citations in the format [filename:lines]. If the context doesn't contain enough information to fully answer the question, acknowledge what you can explain from the available context."""
-
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system_prompt}
         ]
+
+        truncated_history = self._truncate_history(chat_history or [])
+        for msg in truncated_history:
+            role = msg.get("role", "user")
+            if role not in ("user", "assistant"):
+                continue
+            messages.append({"role": role, "content": msg.get("content", "")})
+
+        user_content = (
+            "Based on the following code context from the uploaded repository, "
+            "answer the question.\n\n"
+            f"Context:\n---\n{context}\n---\n\n"
+            f"Question: {query}\n\n"
+            "Cite sources in the format [filename:lines]. If the context does "
+            "not contain enough information to fully answer, acknowledge what "
+            "you can explain from the available context."
+        )
+        messages.append({"role": "user", "content": user_content})
+
+        return messages
 
     def _validate_citations(
         self,
@@ -114,7 +132,10 @@ Provide your answer with source citations in the format [filename:lines]. If the
         """
         import re
 
-        cited_files = set(re.findall(r'[\w/._-]+\.py', answer))
+        _INDEXED_EXTENSIONS = r'\.(?:py|js|ts|jsx|tsx|go|java|rs|rb)'
+        cited_files = set(re.findall(
+            r'[\w/._-]+' + _INDEXED_EXTENSIONS, answer
+        ))
 
         source_paths = {
             chunk.get("metadata", {}).get("file_path", "")
@@ -259,11 +280,21 @@ Provide your answer with source citations in the format [filename:lines]. If the
                         "answer": full_answer
                     }
 
+            citation_check = self._validate_citations(full_answer, retrieved_chunks)
+            if citation_check["hallucinated_files"]:
+                unverified = ", ".join(f"`{f}`" for f in citation_check["hallucinated_files"])
+                full_answer += (
+                    f"\n\n> **Note**: The following file references could not be "
+                    f"verified against the indexed source: {unverified}"
+                )
+
             yield {
                 "type": "done",
                 "answer": full_answer,
                 "sources": sources,
-                "chunks_used": len(retrieved_chunks)
+                "chunks_used": len(retrieved_chunks),
+                "citation_valid": citation_check["citation_valid"],
+                "citation_warnings": citation_check["hallucinated_files"],
             }
 
         except RateLimitError:

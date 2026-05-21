@@ -265,7 +265,19 @@ class CodeChunker:
                     end_line=i - 1,
                     file_path=file_path,
                 ))
-                overlap = current_lines[-self.overlap:] if self.overlap < len(current_lines) else []
+                # Build overlap by including lines from the end of the current
+                # chunk until their cumulative token count reaches self.overlap.
+                # This bounds overlap in tokens, not line count, so dense code
+                # (e.g. 20 tokens/line) does not produce overlap larger than
+                # the chunk itself.
+                overlap: List[str] = []
+                overlap_tokens = 0
+                for prev_line in reversed(current_lines):
+                    t = self.count_tokens(prev_line + "\n")
+                    if overlap_tokens + t > self.overlap:
+                        break
+                    overlap.insert(0, prev_line)
+                    overlap_tokens += t
                 current_lines = overlap + [line]
                 current_tokens = self.count_tokens("\n".join(current_lines))
                 start_line = i - len(overlap)
