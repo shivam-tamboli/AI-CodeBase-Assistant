@@ -53,7 +53,7 @@ class HybridSearchService:
             reranked = await self._cohere_rerank(combined, query, limit)
         except Exception as e:
             logger.warning("Cohere rerank unavailable (%s), using heuristic rerank", e)
-            reranked = self._rerank(combined, query)
+            reranked = self._bm25_rerank(combined, query)
 
         return reranked[:limit]
     
@@ -176,42 +176,33 @@ class HybridSearchService:
                 return rank
         return None
     
-    def _rerank(
-        self, 
-        results: List[Dict], 
-        query: str
-    ) -> List[Dict]:
-        """Apply reranking with exact match bonus
-        
-        Args:
-            results: Combined results from RRF
-            query: Original search query
-            
-        Returns:
-            Reranked results
+    def _bm25_rerank(self, results: List[Dict], query: str) -> List[Dict]:
+        """Re-rank RRF results using in-process BM25 (Okapi BM25).
+
+        BM25 correctly normalises for document length and term frequency,
+        replacing the previous ad-hoc term-count heuristic. Used when
+        COHERE_API_KEY is not configured.
         """
-        query_terms = query.lower().split()
-        
+        if not results:
+            return results
+
+        from rank_bm25 import BM25Okapi
+
+        # Build corpus from content; prepend symbol name to weight it higher.
+        corpus = []
         for doc in results:
-            bonus = 0.0
-            content = doc.get("content", "").lower()
-            metadata = doc.get("metadata", {})
-            name = metadata.get("name", "").lower()
-            
-            for term in query_terms:
-                if len(term) < 3:
-                    continue
-                
-                if term in name:
-                    bonus += 0.2
-                
-                if term in content:
-                    term_count = content.count(term)
-                    if term_count > 0:
-                        bonus += min(0.1 * min(term_count, 5), 0.3)
-            
-            doc["hybrid_score"] = doc.get("hybrid_score", 0) + bonus
-        
+            meta = doc.get("metadata", {})
+            name_tokens = meta.get("name", "").lower().split("_")
+            content_tokens = doc.get("content", "").lower().split()
+            # name tokens repeated to give them implicit higher weight
+            corpus.append(name_tokens * 3 + content_tokens)
+
+        query_tokens = query.lower().split()
+        scores = BM25Okapi(corpus).get_scores(query_tokens)
+
+        for i, doc in enumerate(results):
+            doc["hybrid_score"] = float(scores[i])
+
         return sorted(results, key=lambda x: x.get("hybrid_score", 0), reverse=True)
     
     async def search_with_filters(
