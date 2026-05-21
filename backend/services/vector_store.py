@@ -45,24 +45,31 @@ class VectorStore:
 
         db = Database.get_db()
 
-        texts = [chunk["content"] for chunk in chunks]
+        texts = []
+        for chunk in chunks:
+            summary = chunk.get("summary", "")
+            texts.append(f"{summary}\n\n{chunk['content']}" if summary else chunk["content"])
+
         embeddings = await self.embedding_service.generate_embeddings(texts)
 
         documents = []
         for chunk, embedding in zip(chunks, embeddings):
+            metadata: Dict[str, Any] = {
+                "file_path": chunk.get("file_path", ""),
+                "chunk_type": chunk.get("chunk_type", "unknown"),
+                "name": chunk.get("name", ""),
+                "start_line": chunk.get("start_line", 0),
+                "end_line": chunk.get("end_line", 0),
+                "token_count": chunk.get("token_count", 0),
+                "file_hash": chunk.get("file_hash", ""),
+            }
+            if chunk.get("summary"):
+                metadata["summary"] = chunk["summary"]
             documents.append({
                 "repository_id": repository_id,
                 "content": chunk["content"],
                 "embedding": embedding,
-                "metadata": {
-                    "file_path": chunk.get("file_path", ""),
-                    "chunk_type": chunk.get("chunk_type", "unknown"),
-                    "name": chunk.get("name", ""),
-                    "start_line": chunk.get("start_line", 0),
-                    "end_line": chunk.get("end_line", 0),
-                    "token_count": chunk.get("token_count", 0),
-                    "file_hash": chunk.get("file_hash", "")
-                }
+                "metadata": metadata,
             })
 
         if documents:
