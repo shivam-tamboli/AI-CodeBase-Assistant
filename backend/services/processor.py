@@ -4,16 +4,25 @@ from backend.services.chunker import CodeChunker
 from backend.services.vector_store import VectorStore
 from typing import Dict, Any, Optional
 import hashlib
+import logging
 import os
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+_SUMMARIES_ENABLED = os.getenv("ENABLE_CHUNK_SUMMARIES", "false").lower() == "true"
 
 
 class RepositoryProcessor:
     """Orchestrates repository processing: scan -> chunk -> embed -> store"""
-    
+
     def __init__(self):
         self.vector_store = VectorStore()
         self.chunker = CodeChunker(max_tokens=1000, overlap=100)
+        self._summary_service = None
+        if _SUMMARIES_ENABLED:
+            from backend.services.summary import SummaryService
+            self._summary_service = SummaryService()
     
     async def process_repository(self, repository_id: str, local_path: str) -> Dict[str, Any]:
         """Process a local repository: scan, chunk, embed, and store
@@ -58,15 +67,30 @@ class RepositoryProcessor:
                 "chunks_created": 0
             }
         
+        await self._enrich_with_summaries(all_chunks)
         chunks_added = await self.vector_store.add_chunks(all_chunks, repository_id)
-        
+
         return {
             "status": "success",
             "message": f"Processed {len(files)} files, created {chunks_added} chunks",
             "files_processed": len(files),
             "chunks_created": chunks_added
         }
-    
+
+    async def _enrich_with_summaries(self, chunks: list) -> None:
+        """Attach LLM-generated summaries to chunks when ENABLE_CHUNK_SUMMARIES=true.
+
+        Summaries are stored in chunk["summary"] and later written to metadata.
+        No-op when the feature is disabled or summary service is not initialised.
+        """
+        if not self._summary_service or not chunks:
+            return
+        logger.info("Generating summaries for %d chunks...", len(chunks))
+        summaries = await self._summary_service.summarize_chunks(chunks)
+        for chunk, summary in zip(chunks, summaries):
+            if summary:
+                chunk["summary"] = summary
+
     async def reprocess_repository(self, repository_id: str, local_path: str) -> Dict[str, Any]:
         """Reprocess repository (clears existing chunks first)
         
@@ -154,6 +178,7 @@ class RepositoryProcessor:
 
         chunks_added = 0
         if all_chunks:
+            await self._enrich_with_summaries(all_chunks)
             await self.vector_store.ensure_indexes()
             chunks_added = await self.vector_store.add_chunks(all_chunks, repository_id)
 

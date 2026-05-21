@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_serializer
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 from bson import ObjectId
 
@@ -18,9 +18,13 @@ class RepositoryCreate(RepositoryBase):
 
 class RepositoryImport(BaseModel):
     """Model for importing a repository from a GitHub URL"""
-    url: str = Field(..., description="Public GitHub repository URL")
+    url: str = Field(..., description="GitHub repository URL (public or private)")
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = None
+    branch: Optional[str] = Field(
+        None,
+        description="Branch to clone (defaults to repository HEAD)"
+    )
 
 
 class RepositoryUpdate(BaseModel):
@@ -35,7 +39,8 @@ class RepositoryResponse(RepositoryBase):
     id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+    status: Optional[str] = None
+
     class Config:
         from_attributes = True
 
