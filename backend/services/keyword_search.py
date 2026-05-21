@@ -28,10 +28,25 @@ class KeywordSearchService:
             if self.COMBINED_TEXT_INDEX_NAME not in existing_names:
                 await db.chunks.create_index(
                     [("content", "text"), ("metadata.name", "text")],
+                    weights={"metadata.name": 5, "content": 1},
                     default_language="english",
-                    name=self.COMBINED_TEXT_INDEX_NAME
+                    name=self.COMBINED_TEXT_INDEX_NAME,
                 )
                 print(f"Created compound text index: {self.COMBINED_TEXT_INDEX_NAME}")
+            else:
+                # Re-create if the index exists but lacks field weights.
+                # MongoDB does not support altering index options in-place.
+                existing = await db.chunks.index_information()
+                info = existing.get(self.COMBINED_TEXT_INDEX_NAME, {})
+                if not info.get("weights"):
+                    await db.chunks.drop_index(self.COMBINED_TEXT_INDEX_NAME)
+                    await db.chunks.create_index(
+                        [("content", "text"), ("metadata.name", "text")],
+                        weights={"metadata.name": 5, "content": 1},
+                        default_language="english",
+                        name=self.COMBINED_TEXT_INDEX_NAME,
+                    )
+                    print(f"Recreated text index with field weights: {self.COMBINED_TEXT_INDEX_NAME}")
 
         except Exception as e:
             print(f"Index creation warning: {e}")
