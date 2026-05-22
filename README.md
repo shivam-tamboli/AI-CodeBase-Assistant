@@ -371,6 +371,7 @@ python -m pytest backend/tests/ -q
 ├── pytest.ini                        # asyncio_mode=auto, testpaths=backend/tests
 ├── ARCHITECTURE.md                   # Technical deep dive with component diagrams
 ├── CONTRIBUTING.md                   # Development setup and contribution guidelines
+├── TROUBLESHOOTING.md                # Common errors, root causes, and fixes
 └── docs/
     ├── deployment.md                 # MongoDB Atlas, Render, Vercel step-by-step
     ├── search-pipeline.md            # Hybrid search system internals
@@ -401,6 +402,7 @@ python -m pytest backend/tests/ -q
 | [docs/deployment.md](docs/deployment.md) | Step-by-step deployment: Atlas, Render/Railway, Vercel |
 | [docs/search-pipeline.md](docs/search-pipeline.md) | Hybrid search internals: RRF, BM25, Cohere |
 | [docs/provider-architecture.md](docs/provider-architecture.md) | LLM/embedding provider system and how to add new providers |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common errors, root causes, and diagnostic steps |
 
 ---
 
