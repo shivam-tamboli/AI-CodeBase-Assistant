@@ -43,6 +43,11 @@ function App() {
   // Toast notifications
   const [toasts, setToasts] = useState([])
 
+  // File input refs — needed to reset native input value so same file can be re-selected
+  const uploadInputRef = useRef(null)
+  const importInputRef = useRef(null)  // unused but consistent
+  const reindexInputRef = useRef(null)
+
   // Auto-scroll ref
   const chatEndRef = useRef(null)
 
@@ -170,9 +175,16 @@ function App() {
       const res = await axios.post(`${API_URL}/repositories/upload`, formData, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
       })
+      const repoId = res.data.id
+      // Clear file state and native input so same file can be re-selected
       setUploadFile(null)
-      setUploadStatus({ type: 'loading', text: 'Queued for indexing...' })
-      pollRepoStatus(res.data.id, setUploadStatus, token)
+      if (uploadInputRef.current) uploadInputRef.current.value = ''
+      setUploadStatus({ type: 'loading', text: 'Indexing code...' })
+      // Show repo in dropdown immediately (as pending) and auto-select it
+      await fetchRepositories(token)
+      setSelectedRepo(repoId)
+      // Continue polling until indexed/failed
+      pollRepoStatus(repoId, setUploadStatus, token)
     } catch (err) {
       setUploadStatus({ type: 'error', text: 'Upload failed: ' + (err.response?.data?.detail || err.message) })
       setTimeout(() => setUploadStatus(null), 5000)
@@ -191,9 +203,13 @@ function App() {
         { url: githubUrl.trim() },
         { headers: { Authorization: `Bearer ${token}` } }
       )
+      const repoId = res.data.id
       setGithubUrl('')
-      setImportStatus({ type: 'loading', text: 'Queued for indexing...' })
-      pollRepoStatus(res.data.id, setImportStatus, token)
+      setImportStatus({ type: 'loading', text: 'Indexing code...' })
+      // Show repo in dropdown immediately and auto-select it
+      await fetchRepositories(token)
+      setSelectedRepo(repoId)
+      pollRepoStatus(repoId, setImportStatus, token)
     } catch (err) {
       setImportStatus({ type: 'error', text: 'Import failed: ' + (err.response?.data?.detail || err.message) })
       setTimeout(() => setImportStatus(null), 6000)
@@ -213,6 +229,7 @@ function App() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
       })
       setReindexFile(null)
+      if (reindexInputRef.current) reindexInputRef.current.value = ''
       setReindexStatus({ type: 'loading', text: 'Re-indexing...' })
       pollRepoStatus(res.data.repository_id || selectedRepo, setReindexStatus, token)
     } catch (err) {
@@ -385,6 +402,18 @@ function App() {
     )
   }
 
+  // ── Derived state (computed before render) ────────────────────────────────
+
+  const activeRepo = repositories.find(r => r.id === selectedRepo)
+  const repoStatus = activeRepo?.status
+  const repoReady = repoStatus === 'indexed'
+  const HINTS = [
+    'How does authentication work?',
+    'Where is the main entry point?',
+    'Explain the database schema',
+    'How are errors handled?',
+  ]
+
   // ── Auth Screen ───────────────────────────────────────────────────────────
 
   if (!token) {
@@ -485,6 +514,7 @@ function App() {
                 <span>📁</span>
                 <span>{uploadFile ? uploadFile.name : 'Choose ZIP file'}</span>
                 <input
+                  ref={uploadInputRef}
                   type="file"
                   accept=".zip"
                   onChange={(e) => setUploadFile(e.target.files[0])}
@@ -538,7 +568,9 @@ function App() {
             >
               <option value="">-- Select a repository --</option>
               {repositories.map(repo => (
-                <option key={repo.id} value={repo.id}>{repo.name}</option>
+                <option key={repo.id} value={repo.id}>
+                  {repo.name}{repo.status && repo.status !== 'indexed' ? ` (${repo.status}…)` : ''}
+                </option>
               ))}
             </select>
           </div>
@@ -552,6 +584,7 @@ function App() {
                   <span>📁</span>
                   <span>{reindexFile ? reindexFile.name : 'Choose updated ZIP'}</span>
                   <input
+                    ref={reindexInputRef}
                     type="file"
                     accept=".zip"
                     onChange={(e) => setReindexFile(e.target.files[0])}
@@ -612,12 +645,7 @@ function App() {
             <div className="empty-state">
               <div className="empty-state-icon">💬</div>
               <h3>Select a repository to start</h3>
-              <p>Upload a ZIP or import from GitHub, then choose it from the sidebar.</p>
-              <div className="empty-state-hints">
-                <span className="hint-chip">How does authentication work?</span>
-                <span className="hint-chip">Where is the main entry point?</span>
-                <span className="hint-chip">Explain the database schema</span>
-              </div>
+              <p>Upload a ZIP or import from GitHub, then select it from the dropdown above.</p>
             </div>
           ) : (
             <>
@@ -628,12 +656,31 @@ function App() {
                 </div>
               )}
 
+              {!repoReady && repoStatus && (
+                <div className="indexing-banner">
+                  <div className="thinking-dots">
+                    <span /><span /><span />
+                  </div>
+                  Repository is {repoStatus} — chat will be available once indexing completes
+                </div>
+              )}
+
               <div className="chat-messages">
                 {chatHistory.length === 0 && (
                   <div className="empty-chat">
                     <div className="empty-chat-icon">💬</div>
-                    <p>Ask a question about your codebase</p>
-                    <p className="hint">Try: "How does authentication work?" or "Where is the database initialized?"</p>
+                    <p>{repoReady ? 'Ask a question about your codebase' : 'Indexing in progress — questions available shortly'}</p>
+                    {repoReady && (
+                      <div className="empty-state-hints">
+                        {HINTS.map(hint => (
+                          <span
+                            key={hint}
+                            className="hint-chip"
+                            onClick={() => setQuestion(hint)}
+                          >{hint}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -690,17 +737,17 @@ function App() {
                 <div className="input-wrapper">
                   <textarea
                     className="chat-textarea"
-                    placeholder="Ask a question about your code... (Enter to send, Shift+Enter for new line)"
+                    placeholder={repoReady ? 'Ask a question about your code… (Enter to send)' : 'Waiting for indexing to complete…'}
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
                     onKeyDown={handleKeyDown}
                     rows={2}
-                    disabled={chatLoading}
+                    disabled={chatLoading || !repoReady}
                   />
                   <button
                     className="send-btn"
                     onClick={askQuestion}
-                    disabled={chatLoading || !question.trim()}
+                    disabled={chatLoading || !question.trim() || !repoReady}
                   >
                     {chatLoading ? '...' : 'Send ↑'}
                   </button>
