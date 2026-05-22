@@ -6,45 +6,11 @@ Thank you for your interest in contributing. This guide covers how to set up a d
 
 ## Development Setup
 
-### Prerequisites
+Follow the [Quick Start in README.md](README.md#quick-start) to clone, install dependencies, configure `backend/.env`, and start both servers.
 
-- Python 3.10+
-- Node.js 18+
-- `git` on PATH
-- MongoDB Atlas account (free M0 tier)
-- OpenAI API key
+Once both are running, Swagger UI is available at `http://localhost:8000/docs` — useful for manual API testing without the frontend.
 
-### Backend
-
-```bash
-# Clone the repository
-git clone https://github.com/shivam-tamboli/AI-CodeBase-Assistant.git
-cd AI-CodeBase-Assistant
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-
-# Install all dependencies including dev tools
-pip install -r backend/requirements.txt
-
-# Configure environment
-cp backend/.env.example backend/.env
-# Edit backend/.env — minimum: OPENAI_API_KEY, MONGODB_URI, JWT_SECRET
-
-# Start the dev server with auto-reload
-uvicorn backend.main:app --reload
-```
-
-Swagger UI is available at `http://localhost:8000/docs` — useful for manual API testing without needing the frontend.
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev    # http://localhost:5173
-```
+For common startup errors and their fixes, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ---
 
