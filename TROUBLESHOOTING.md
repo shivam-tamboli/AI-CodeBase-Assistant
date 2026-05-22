@@ -1,6 +1,9 @@
-# Debugging & Setup Guide
+# Troubleshooting
 
-Complete reference for running, troubleshooting, and understanding common failures in the AI Codebase Assistant.
+Complete reference for diagnosing and fixing common failures in the AI Codebase Assistant.
+
+> For setup and startup instructions, see [README.md](README.md#quick-start).  
+> For deployment, see [docs/deployment.md](docs/deployment.md).
 
 ---
 
@@ -14,76 +17,6 @@ Complete reference for running, troubleshooting, and understanding common failur
 | `ANTHROPIC_API_KEY` | Only if `LLM_PROVIDER=anthropic` | https://console.anthropic.com |
 | `COHERE_API_KEY` | No (enables better re-ranking) | https://cohere.com (free tier: 1000 req/month) |
 | `GITHUB_TOKEN` | No (enables private repo import) | https://github.com/settings/tokens → scope: `repo` (read-only) |
-
----
-
-## How to Run the Project
-
-### 1. Clone and set up
-
-```bash
-git clone https://github.com/shivam-tamboli/AI-CodeBase-Assistant.git
-cd AI-CodeBase-Assistant
-```
-
-### 2. Create the backend virtual environment
-
-```bash
-python3.12 -m venv venv          # must be Python 3.12
-source venv/bin/activate
-python3 -m pip install -r backend/requirements.txt
-```
-
-> **Important**: Use `python3 -m pip install` not just `pip install`. If the venv was created from a different directory and then the project was moved/renamed, the `pip` shebang breaks. Using `python3 -m pip` bypasses the shebang entirely.
-
-### 3. Create `backend/.env`
-
-Copy the template and fill in values:
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-Minimum required values:
-
-```
-OPENAI_API_KEY=sk-proj-...
-MONGODB_URI=mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/ragdb?retryWrites=true&w=majority
-JWT_SECRET=<64-char hex string>
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:5174
-```
-
-### 4. Start the backend
-
-```bash
-# From the project root with venv active
-source venv/bin/activate
-uvicorn backend.main:app --reload
-```
-
-Expected output:
-```
-Connected to MongoDB
-Users collection indexes initialized
-Indexes and services initialized
-INFO: Uvicorn running on http://0.0.0.0:8000
-```
-
-### 5. Start the frontend
-
-```bash
-cd frontend
-npm install        # first time only
-npm run dev
-```
-
-Expected output:
-```
-VITE ready in Xms
-Local: http://localhost:5173/
-```
-
-The frontend is pinned to port **5173** via `vite.config.js` (`strictPort: true`). If 5173 is already in use, Vite will fail with an error rather than silently using 5174 — which would cause CORS failures.
 
 ---
 
@@ -110,7 +43,7 @@ source venv/bin/activate && uvicorn backend.main:app --reload
 cd frontend && npm run dev
 ```
 
-**Prevention**: `vite.config.js` now has `strictPort: true` — if 5173 is taken, `npm run dev` fails immediately with a clear error instead of silently using 5174.
+**Prevention**: `vite.config.js` has `strictPort: true` — if 5173 is taken, `npm run dev` fails immediately with a clear error instead of silently using 5174.
 
 ---
 
@@ -282,23 +215,3 @@ curl -X OPTIONS http://localhost:8000/auth/login \
 | 6 | Same ZIP can't be re-uploaded | Native `<input>` value not cleared after upload | Add `inputRef.current.value = ''` | #77 |
 | 7 | Hint chips did nothing | `<span>` elements with no onClick | Add `onClick={() => setQuestion(hint)}` | #77 |
 | 8 | Chat works on pending repo | No readiness guard on chat input | Disable textarea+send when `repoStatus !== 'indexed'` | #77 |
-
----
-
-## Environment Variables Quick Reference
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `OPENAI_API_KEY` | Yes | — | OpenAI API key |
-| `MONGODB_URI` | Yes | — | Atlas connection string (must include `/ragdb`) |
-| `JWT_SECRET` | Yes | insecure default | HS256 signing secret — generate random 32-byte hex |
-| `ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated CORS origins |
-| `LLM_PROVIDER` | No | `openai` | `openai` or `anthropic` |
-| `LLM_MODEL` | No | `gpt-4o-mini` | Model name |
-| `LLM_MAX_TOKENS` | No | `2000` | Max response tokens |
-| `EMBEDDING_PROVIDER` | No | `openai` | Embedding provider |
-| `EMBEDDING_MODEL` | No | `text-embedding-3-small` | Embedding model |
-| `ANTHROPIC_API_KEY` | Only if provider=anthropic | — | Anthropic key |
-| `COHERE_API_KEY` | No | — | Enables cross-encoder re-ranking |
-| `GITHUB_TOKEN` | No | — | For importing private repos |
-| `ENABLE_CHUNK_SUMMARIES` | No | `false` | LLM summaries at index time (slower) |
