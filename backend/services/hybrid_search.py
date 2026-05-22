@@ -2,6 +2,7 @@ from backend.services.vector_store import VectorStore
 from backend.services.keyword_search import KeywordSearchService
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
+import asyncio
 import hashlib
 import logging
 import os
