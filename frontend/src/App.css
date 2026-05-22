@@ -994,3 +994,18 @@ header h1 {
 .toast-error   { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; }
 .toast-success { background: var(--green-subtle);  border: 1px solid rgba(16,185,129,0.35); color: #6ee7b7; }
 .toast-info    { background: var(--accent-subtle); border: 1px solid rgba(99,102,241,0.35); color: #a5b4fc; }
+
+/* ── Indexing Banner ─────────────────────────────────────────────────────── */
+.indexing-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--accent-subtle);
+  border-bottom: 1px solid rgba(99,102,241,0.3);
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+/* Make hint chips clickable */
+.hint-chip { cursor: pointer; }
