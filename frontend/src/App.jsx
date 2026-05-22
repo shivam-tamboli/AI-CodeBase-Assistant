@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
@@ -7,9 +7,10 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
+  const [username, setUsername] = useState(localStorage.getItem('username') || '')
   const [isRegistering, setIsRegistering] = useState(false)
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+  const [authUsername, setAuthUsername] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
 
   // Repository state
   const [repositories, setRepositories] = useState([])
@@ -20,28 +21,41 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState(null)
   const [chatHistory, setChatHistory] = useState([])
 
-  // Upload state
+  // Upload state — separate loading per operation
   const [uploadFile, setUploadFile] = useState(null)
-  const [uploadStatus, setUploadStatus] = useState('')
+  const [uploadLoading, setUploadLoading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState(null) // {type: 'loading'|'success'|'error', text}
 
   // Reindex state
   const [reindexFile, setReindexFile] = useState(null)
-  const [reindexStatus, setReindexStatus] = useState('')
+  const [reindexLoading, setReindexLoading] = useState(false)
+  const [reindexStatus, setReindexStatus] = useState(null)
 
   // GitHub import state
   const [githubUrl, setGithubUrl] = useState('')
-  const [importStatus, setImportStatus] = useState('')
+  const [importLoading, setImportLoading] = useState(false)
+  const [importStatus, setImportStatus] = useState(null)
 
   // Chat state
   const [question, setQuestion] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [chatLoading, setChatLoading] = useState(false)
 
-  // Load repos on mount if token already exists (fixes page refresh bug)
+  // Toast notifications
+  const [toasts, setToasts] = useState([])
+
+  // Auto-scroll ref
+  const chatEndRef = useRef(null)
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatHistory])
+
+  // Load repos on mount if already logged in (fixes page-refresh bug)
   useEffect(() => {
     if (token) fetchRepositories(token)
   }, [])
 
-  // Load sessions whenever the selected repo changes
+  // Load sessions when selected repo changes
   useEffect(() => {
     if (token && selectedRepo) {
       fetchSessions(selectedRepo)
@@ -54,35 +68,78 @@ function App() {
     }
   }, [selectedRepo])
 
+  // ── Toasts ────────────────────────────────────────────────────────────────
+
+  const showToast = (message, type = 'info') => {
+    const id = Date.now()
+    setToasts(prev => [...prev, { id, message, type }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500)
+  }
+
+  const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id))
+
+  // ── Status Polling ────────────────────────────────────────────────────────
+
+  const pollRepoStatus = (repoId, setStatus, authToken) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${API_URL}/repositories/${repoId}/status`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        })
+        const { status, name, error } = res.data
+        if (status === 'indexed') {
+          clearInterval(interval)
+          setStatus({ type: 'success', text: `"${name}" indexed successfully` })
+          fetchRepositories(authToken)
+          setTimeout(() => setStatus(null), 4000)
+        } else if (status === 'failed') {
+          clearInterval(interval)
+          setStatus({ type: 'error', text: `Indexing failed: ${error || 'unknown error'}` })
+          setTimeout(() => setStatus(null), 6000)
+        } else if (status === 'indexing') {
+          setStatus({ type: 'loading', text: 'Indexing code...' })
+        }
+      } catch {
+        clearInterval(interval)
+      }
+    }, 2000)
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   const login = async () => {
     try {
-      const res = await axios.post(`${API_URL}/auth/login`, { username, password })
+      const res = await axios.post(`${API_URL}/auth/login`, { username: authUsername, password: authPassword })
       const newToken = res.data.access_token
       setToken(newToken)
+      setUsername(authUsername)
       localStorage.setItem('token', newToken)
+      localStorage.setItem('username', authUsername)
       fetchRepositories(newToken)
     } catch (err) {
-      alert('Login failed: ' + (err.response?.data?.detail || err.message))
+      showToast('Login failed: ' + (err.response?.data?.detail || err.message), 'error')
     }
   }
 
   const register = async () => {
     try {
-      const res = await axios.post(`${API_URL}/auth/register`, { username, password })
+      const res = await axios.post(`${API_URL}/auth/register`, { username: authUsername, password: authPassword })
       const newToken = res.data.access_token
       setToken(newToken)
+      setUsername(authUsername)
       localStorage.setItem('token', newToken)
+      localStorage.setItem('username', authUsername)
       fetchRepositories(newToken)
     } catch (err) {
-      alert('Registration failed: ' + (err.response?.data?.detail || err.message))
+      showToast('Registration failed: ' + (err.response?.data?.detail || err.message), 'error')
     }
   }
 
   const logout = () => {
     setToken('')
+    setUsername('')
     localStorage.removeItem('token')
+    localStorage.removeItem('username')
     setRepositories([])
     setSessions([])
     setActiveSessionId(null)
@@ -105,68 +162,64 @@ function App() {
 
   const handleUpload = async () => {
     if (!uploadFile) return
-    setLoading(true)
-    setUploadStatus('Uploading and indexing...')
-
+    setUploadLoading(true)
+    setUploadStatus({ type: 'loading', text: 'Uploading...' })
     const formData = new FormData()
     formData.append('file', uploadFile)
-
     try {
-      await axios.post(`${API_URL}/repositories/upload`, formData, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data'
-        }
+      const res = await axios.post(`${API_URL}/repositories/upload`, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
       })
-      setUploadStatus('Done! Repository indexed.')
       setUploadFile(null)
-      fetchRepositories(token)
+      setUploadStatus({ type: 'loading', text: 'Queued for indexing...' })
+      pollRepoStatus(res.data.id, setUploadStatus, token)
     } catch (err) {
-      setUploadStatus('Upload failed: ' + (err.response?.data?.detail || err.message))
+      setUploadStatus({ type: 'error', text: 'Upload failed: ' + (err.response?.data?.detail || err.message) })
+      setTimeout(() => setUploadStatus(null), 5000)
     } finally {
-      setLoading(false)
-      setTimeout(() => setUploadStatus(''), 4000)
+      setUploadLoading(false)
     }
   }
 
   const handleGitHubImport = async () => {
     if (!githubUrl.trim()) return
-    setLoading(true)
-    setImportStatus('Cloning and indexing...')
+    setImportLoading(true)
+    setImportStatus({ type: 'loading', text: 'Cloning repository...' })
     try {
-      await axios.post(`${API_URL}/repositories/import`,
+      const res = await axios.post(
+        `${API_URL}/repositories/import`,
         { url: githubUrl.trim() },
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      setImportStatus('Done! Repository indexed.')
       setGithubUrl('')
-      fetchRepositories(token)
+      setImportStatus({ type: 'loading', text: 'Queued for indexing...' })
+      pollRepoStatus(res.data.id, setImportStatus, token)
     } catch (err) {
-      setImportStatus('Import failed: ' + (err.response?.data?.detail || err.message))
+      setImportStatus({ type: 'error', text: 'Import failed: ' + (err.response?.data?.detail || err.message) })
+      setTimeout(() => setImportStatus(null), 6000)
     } finally {
-      setLoading(false)
-      setTimeout(() => setImportStatus(''), 5000)
+      setImportLoading(false)
     }
   }
 
   const handleReindex = async () => {
     if (!reindexFile || !selectedRepo) return
-    setLoading(true)
-    setReindexStatus('Re-indexing...')
+    setReindexLoading(true)
+    setReindexStatus({ type: 'loading', text: 'Uploading...' })
     const formData = new FormData()
     formData.append('file', reindexFile)
     try {
       const res = await axios.post(`${API_URL}/repositories/${selectedRepo}/reindex`, formData, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
       })
-      const { files_changed, files_removed, chunks_created } = res.data
-      setReindexStatus(`Done — ${files_changed} changed, ${files_removed} removed, ${chunks_created} new chunks`)
       setReindexFile(null)
+      setReindexStatus({ type: 'loading', text: 'Re-indexing...' })
+      pollRepoStatus(res.data.repository_id || selectedRepo, setReindexStatus, token)
     } catch (err) {
-      setReindexStatus('Failed: ' + (err.response?.data?.detail || err.message))
+      setReindexStatus({ type: 'error', text: 'Failed: ' + (err.response?.data?.detail || err.message) })
+      setTimeout(() => setReindexStatus(null), 5000)
     } finally {
-      setLoading(false)
-      setTimeout(() => setReindexStatus(''), 5000)
+      setReindexLoading(false)
     }
   }
 
@@ -187,16 +240,16 @@ function App() {
   const startNewSession = async () => {
     if (!selectedRepo) return
     try {
-      const res = await axios.post(`${API_URL}/chat/sessions`,
+      const res = await axios.post(
+        `${API_URL}/chat/sessions`,
         { repository_id: selectedRepo },
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      const newSessionId = res.data.session_id
-      setActiveSessionId(newSessionId)
+      setActiveSessionId(res.data.session_id)
       setChatHistory([])
       fetchSessions(selectedRepo)
     } catch (err) {
-      alert('Failed to create session: ' + (err.response?.data?.detail || err.message))
+      showToast('Failed to create session: ' + (err.response?.data?.detail || err.message), 'error')
     }
   }
 
@@ -216,7 +269,6 @@ function App() {
 
   const deleteSession = async (sessionId, e) => {
     e.stopPropagation()
-    if (!confirm('Delete this conversation?')) return
     try {
       await axios.delete(`${API_URL}/chat/sessions/${sessionId}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -227,7 +279,7 @@ function App() {
       }
       fetchSessions(selectedRepo)
     } catch (err) {
-      alert('Failed to delete session: ' + (err.response?.data?.detail || err.message))
+      showToast('Failed to delete session', 'error')
     }
   }
 
@@ -236,11 +288,11 @@ function App() {
   const askQuestion = async () => {
     if (!question.trim() || !selectedRepo) return
 
-    // Ensure we have an active session
     let sessionId = activeSessionId
     if (!sessionId) {
       try {
-        const res = await axios.post(`${API_URL}/chat/sessions`,
+        const res = await axios.post(
+          `${API_URL}/chat/sessions`,
           { repository_id: selectedRepo },
           { headers: { Authorization: `Bearer ${token}` } }
         )
@@ -248,21 +300,19 @@ function App() {
         setActiveSessionId(sessionId)
         fetchSessions(selectedRepo)
       } catch (err) {
-        alert('Could not create session: ' + (err.response?.data?.detail || err.message))
+        showToast('Could not create session: ' + (err.response?.data?.detail || err.message), 'error')
         return
       }
     }
 
     const userMessage = question.trim()
     setQuestion('')
-    setLoading(true)
+    setChatLoading(true)
 
-    // Add user message and an empty assistant placeholder
-    const assistantPlaceholder = { role: 'assistant', content: '', sources: [], timestamp: new Date().toISOString() }
     setChatHistory(prev => [
       ...prev,
       { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
-      assistantPlaceholder
+      { role: 'assistant', content: '', sources: [], timestamp: new Date().toISOString() }
     ])
 
     try {
@@ -286,7 +336,7 @@ function App() {
         if (done) break
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop()   // keep incomplete line for next iteration
+        buffer = lines.pop()
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
@@ -304,7 +354,7 @@ function App() {
               })
             }
             if (event.type === 'done') fetchSessions(selectedRepo)
-          } catch { /* malformed line — skip */ }
+          } catch { /* malformed SSE line — skip */ }
         }
       }
     } catch (err) {
@@ -314,7 +364,7 @@ function App() {
         return updated
       })
     } finally {
-      setLoading(false)
+      setChatLoading(false)
     }
   }
 
@@ -325,52 +375,76 @@ function App() {
     }
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
   const formatTime = (isoString) => {
     if (!isoString) return ''
     const d = new Date(isoString)
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return (
+      d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+      ' ' +
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    )
   }
 
   // ── Auth Screen ───────────────────────────────────────────────────────────
 
   if (!token) {
     return (
-      <div className="app">
-        <header>
-          <h1>AI Codebase Assistant</h1>
-          <p>Ask questions about your code</p>
-        </header>
-        <main>
-          <div className="login-form">
-            <h2>{isRegistering ? 'Create Account' : 'Login'}</h2>
-            <input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
-            />
-            <button onClick={isRegistering ? register : login} disabled={!username || !password}>
-              {isRegistering ? 'Create Account' : 'Login'}
+      <>
+        <div className="auth-screen">
+          <div className="auth-logo">⚡</div>
+          <h1 className="auth-title">AI Codebase Assistant</h1>
+          <p className="auth-subtitle">Ask questions about your code in plain English</p>
+          <div className="auth-card">
+            <h2>{isRegistering ? 'Create account' : 'Sign in'}</h2>
+            <div className="auth-field">
+              <label htmlFor="auth-user">Username</label>
+              <input
+                id="auth-user"
+                className="auth-input"
+                type="text"
+                placeholder="your-username"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
+                autoComplete="username"
+              />
+            </div>
+            <div className="auth-field">
+              <label htmlFor="auth-pass">Password</label>
+              <input
+                id="auth-pass"
+                className="auth-input"
+                type="password"
+                placeholder="••••••••"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
+                autoComplete={isRegistering ? 'new-password' : 'current-password'}
+              />
+            </div>
+            <button
+              className="auth-submit"
+              onClick={isRegistering ? register : login}
+              disabled={!authUsername || !authPassword}
+            >
+              {isRegistering ? 'Create account' : 'Sign in'}
             </button>
-            <p className="toggle-auth">
+            <div className="auth-toggle">
               {isRegistering ? 'Already have an account?' : "Don't have an account?"}
-              <button className="link-btn" onClick={() => setIsRegistering(!isRegistering)}>
-                {isRegistering ? ' Login' : ' Register'}
+              <button onClick={() => setIsRegistering(!isRegistering)}>
+                {isRegistering ? 'Sign in' : 'Register'}
               </button>
-            </p>
+            </div>
           </div>
-        </main>
-      </div>
+        </div>
+        <div className="toast-container">
+          {toasts.map(t => (
+            <div key={t.id} className={`toast toast-${t.type}`} onClick={() => dismissToast(t.id)}>
+              {t.message}
+            </div>
+          ))}
+        </div>
+      </>
     )
   }
 
@@ -378,87 +452,134 @@ function App() {
 
   return (
     <div className="app">
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast toast-${t.type}`} onClick={() => dismissToast(t.id)}>
+            {t.message}
+          </div>
+        ))}
+      </div>
+
       <header>
-        <h1>AI Codebase Assistant</h1>
+        <div className="header-brand">
+          <div className="header-logo">⚡</div>
+          <h1>AI Codebase Assistant</h1>
+        </div>
         <div className="header-right">
-          <span className="username-label">{username || 'Logged in'}</span>
+          <div className="status-dot" title="Connected" />
+          <span className="username-label">{username}</span>
           <button className="logout-btn" onClick={logout}>Logout</button>
         </div>
       </header>
 
       <main className="main-layout">
 
-        {/* ── LEFT SIDEBAR ─────────────────────────────────────────────── */}
+        {/* ── SIDEBAR ──────────────────────────────────────────────────── */}
         <aside className="sidebar">
-          <section className="upload-section">
-            <h2>Upload Repository</h2>
-            <div className="upload-form">
-              <input
-                type="file"
-                accept=".zip"
-                onChange={(e) => setUploadFile(e.target.files[0])}
-              />
-              <button onClick={handleUpload} disabled={loading || !uploadFile}>
-                {uploadStatus || 'Upload ZIP'}
-              </button>
-            </div>
-          </section>
 
-          <section className="upload-section">
-            <h2>Import from GitHub</h2>
-            <div className="upload-form">
+          {/* Upload ZIP */}
+          <div className="sidebar-section">
+            <div className="section-label">Upload Repository</div>
+            <div className="input-group">
+              <label className="file-label">
+                <span>📁</span>
+                <span>{uploadFile ? uploadFile.name : 'Choose ZIP file'}</span>
+                <input
+                  type="file"
+                  accept=".zip"
+                  onChange={(e) => setUploadFile(e.target.files[0])}
+                />
+              </label>
+              <button
+                className="btn btn-primary btn-full"
+                onClick={handleUpload}
+                disabled={uploadLoading || !uploadFile}
+              >
+                {uploadLoading ? 'Uploading...' : 'Upload & Index'}
+              </button>
+              {uploadStatus && (
+                <div className={`status-msg ${uploadStatus.type}`}>{uploadStatus.text}</div>
+              )}
+            </div>
+          </div>
+
+          {/* GitHub Import */}
+          <div className="sidebar-section">
+            <div className="section-label">Import from GitHub</div>
+            <div className="input-group">
               <input
+                className="text-input"
                 type="url"
                 placeholder="https://github.com/owner/repo"
                 value={githubUrl}
                 onChange={(e) => setGithubUrl(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleGitHubImport()}
               />
-              <button onClick={handleGitHubImport} disabled={loading || !githubUrl.trim()}>
-                {importStatus || 'Import'}
+              <button
+                className="btn btn-primary btn-full"
+                onClick={handleGitHubImport}
+                disabled={importLoading || !githubUrl.trim()}
+              >
+                {importLoading ? 'Cloning...' : 'Import Repository'}
               </button>
+              {importStatus && (
+                <div className={`status-msg ${importStatus.type}`}>{importStatus.text}</div>
+              )}
             </div>
-          </section>
+          </div>
 
-          <section className="repo-section">
-            <h2>Repository</h2>
+          {/* Repository select */}
+          <div className="sidebar-section">
+            <div className="section-label">Active Repository</div>
             <select
+              className="repo-select"
               value={selectedRepo}
               onChange={(e) => setSelectedRepo(e.target.value)}
-              className="repo-select-dropdown"
             >
               <option value="">-- Select a repository --</option>
               {repositories.map(repo => (
                 <option key={repo.id} value={repo.id}>{repo.name}</option>
               ))}
             </select>
-          </section>
+          </div>
 
+          {/* Re-index (only when repo selected) */}
           {selectedRepo && (
-            <section className="upload-section">
-              <h2>Re-index Repository</h2>
-              <div className="upload-form">
-                <input
-                  type="file"
-                  accept=".zip"
-                  onChange={(e) => setReindexFile(e.target.files[0])}
-                />
-                <button onClick={handleReindex} disabled={loading || !reindexFile}>
-                  {reindexStatus || 'Re-index ZIP'}
+            <div className="sidebar-section">
+              <div className="section-label">Re-index Repository</div>
+              <div className="input-group">
+                <label className="file-label">
+                  <span>📁</span>
+                  <span>{reindexFile ? reindexFile.name : 'Choose updated ZIP'}</span>
+                  <input
+                    type="file"
+                    accept=".zip"
+                    onChange={(e) => setReindexFile(e.target.files[0])}
+                  />
+                </label>
+                <button
+                  className="btn btn-ghost btn-full"
+                  onClick={handleReindex}
+                  disabled={reindexLoading || !reindexFile}
+                >
+                  {reindexLoading ? 'Uploading...' : 'Re-index ZIP'}
                 </button>
+                {reindexStatus && (
+                  <div className={`status-msg ${reindexStatus.type}`}>{reindexStatus.text}</div>
+                )}
               </div>
-            </section>
+            </div>
           )}
 
+          {/* Conversations */}
           {selectedRepo && (
-            <section className="sessions-section">
+            <div className="sidebar-section" style={{ flex: 1, overflowY: 'auto' }}>
               <div className="sessions-header">
-                <h2>Conversations</h2>
-                <button className="new-chat-btn" onClick={startNewSession}>+ New Chat</button>
+                <div className="section-label" style={{ margin: 0 }}>Conversations</div>
+                <button className="btn btn-new-chat" onClick={startNewSession}>+ New</button>
               </div>
-
               {sessions.length === 0 ? (
-                <p className="no-sessions">No conversations yet. Click "+ New Chat" to start.</p>
+                <p className="no-sessions">No conversations yet</p>
               ) : (
                 <ul className="sessions-list">
                   {sessions.map(session => (
@@ -475,28 +596,34 @@ function App() {
                         className="session-delete-btn"
                         onClick={(e) => deleteSession(session.id, e)}
                         title="Delete conversation"
-                      >
-                        ×
-                      </button>
+                      >×</button>
                     </li>
                   ))}
                 </ul>
               )}
-            </section>
+            </div>
           )}
+
         </aside>
 
         {/* ── CHAT AREA ─────────────────────────────────────────────────── */}
         <section className="chat-section">
           {!selectedRepo ? (
             <div className="empty-state">
-              <p>Select a repository from the sidebar to start asking questions.</p>
-              <p>If you don't have one yet, upload a ZIP file first.</p>
+              <div className="empty-state-icon">💬</div>
+              <h3>Select a repository to start</h3>
+              <p>Upload a ZIP or import from GitHub, then choose it from the sidebar.</p>
+              <div className="empty-state-hints">
+                <span className="hint-chip">How does authentication work?</span>
+                <span className="hint-chip">Where is the main entry point?</span>
+                <span className="hint-chip">Explain the database schema</span>
+              </div>
             </div>
           ) : (
             <>
               {activeSessionId && (
                 <div className="session-badge">
+                  <div className="badge-dot" />
                   Conversation active · {chatHistory.length} messages
                 </div>
               )}
@@ -504,31 +631,47 @@ function App() {
               <div className="chat-messages">
                 {chatHistory.length === 0 && (
                   <div className="empty-chat">
-                    <p>Ask a question about your codebase below.</p>
-                    <p className="hint">Try: "How does authentication work?" or "Where is the main entry point?"</p>
+                    <div className="empty-chat-icon">💬</div>
+                    <p>Ask a question about your codebase</p>
+                    <p className="hint">Try: "How does authentication work?" or "Where is the database initialized?"</p>
                   </div>
                 )}
 
                 {chatHistory.map((msg, i) => (
                   <div key={i} className={`message message-${msg.role}`}>
-                    <div className="message-role">{msg.role === 'user' ? 'You' : 'Assistant'}</div>
+                    <div className="message-header">
+                      <div className={`avatar avatar-${msg.role}`}>
+                        {msg.role === 'user' ? (username[0]?.toUpperCase() || 'U') : 'AI'}
+                      </div>
+                      <span className="message-role">{msg.role === 'user' ? username : 'Assistant'}</span>
+                    </div>
                     <div className="message-content">
                       {msg.role === 'assistant'
-                        ? <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        ? (msg.content
+                            ? <ReactMarkdown>{msg.content}</ReactMarkdown>
+                            : <span className="thinking">
+                                <div className="thinking-dots">
+                                  <span /><span /><span />
+                                </div>
+                              </span>)
                         : msg.content}
                     </div>
 
                     {msg.sources && msg.sources.length > 0 && (
                       <div className="sources">
-                        <div className="sources-title">Sources ({msg.sources.length} chunks)</div>
+                        <div className="sources-title">
+                          📌 Sources ({msg.sources.length} chunks)
+                        </div>
                         <ul>
                           {msg.sources.map((src, j) => (
                             <li key={j}>
                               <code>{src.file_path || '(unknown file)'}</code>
                               {src.start_line > 0 && (
-                                <span> lines {src.start_line}–{src.end_line}</span>
+                                <span className="source-lines"> L{src.start_line}–{src.end_line}</span>
                               )}
-                              {src.name && <span className="chunk-name"> · {src.chunk_type}: {src.name}</span>}
+                              {src.name && (
+                                <span className="chunk-name"> · {src.chunk_type}: {src.name}</span>
+                              )}
                               <span className="score">{src.score?.toFixed(3)}</span>
                             </li>
                           ))}
@@ -540,30 +683,29 @@ function App() {
                   </div>
                 ))}
 
-                {loading && (
-                  <div className="message message-assistant">
-                    <div className="message-role">Assistant</div>
-                    <div className="message-content thinking">Thinking...</div>
-                  </div>
-                )}
+                <div ref={chatEndRef} />
               </div>
 
               <div className="chat-input-area">
-                <textarea
-                  placeholder="Ask a question about your code... (Enter to send, Shift+Enter for new line)"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={3}
-                  disabled={loading}
-                />
-                <button
-                  onClick={askQuestion}
-                  disabled={loading || !question.trim()}
-                  className="send-btn"
-                >
-                  {loading ? 'Thinking...' : 'Ask'}
-                </button>
+                <div className="input-wrapper">
+                  <textarea
+                    className="chat-textarea"
+                    placeholder="Ask a question about your code... (Enter to send, Shift+Enter for new line)"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    rows={2}
+                    disabled={chatLoading}
+                  />
+                  <button
+                    className="send-btn"
+                    onClick={askQuestion}
+                    disabled={chatLoading || !question.trim()}
+                  >
+                    {chatLoading ? '...' : 'Send ↑'}
+                  </button>
+                </div>
+                <p className="input-hint">Enter to send · Shift+Enter for new line</p>
               </div>
             </>
           )}
