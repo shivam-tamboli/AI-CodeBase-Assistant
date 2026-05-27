@@ -34,7 +34,7 @@ python -m pytest backend/tests/test_unit.py -v
 python -m pytest backend/tests/test_api.py::TestRepositories::test_list_repositories -v
 ```
 
-All 41 tests must pass before a pull request is considered for merge.
+All tests must pass before a pull request is considered for merge.
 
 ---
 
@@ -77,7 +77,7 @@ The rule: **no business logic in API handlers**. Route handlers validate input, 
 
 3. **Write tests** for any new behaviour. The test suite lives in `backend/tests/`. Use the existing fixtures in `conftest.py` (`test_client`, `auth_headers`, `mock_db`).
 
-4. **Run the full test suite** and confirm all 41 tests pass:
+4. **Run the full test suite** and confirm all tests pass:
    ```bash
    python -m pytest backend/tests/ -q
    ```
@@ -108,12 +108,6 @@ The rule: **no business logic in API handlers**. Route handlers validate input, 
 ## Adding a New LLM Provider
 
 See [docs/provider-architecture.md](docs/provider-architecture.md) for a step-by-step guide.
-
-The short version:
-1. Implement `LLMProvider` from `backend/services/providers/base.py`
-2. Add the provider to `get_llm_provider()` in `backend/services/providers/factory.py`
-3. Add `PROVIDER_API_KEY` to `backend/.env.example`
-4. Add tests
 
 ---
 

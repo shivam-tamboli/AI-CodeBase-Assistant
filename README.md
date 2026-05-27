@@ -102,7 +102,7 @@ flowchart LR
     P --> Q([Answer +\ncitations])
 ```
 
-**RAG query sequence:**
+**RAG query sequence** *(high-level overview — see [ARCHITECTURE.md](ARCHITECTURE.md#rag-query-flow) for the full detailed flow including session history and citation validation)*:
 
 ```mermaid
 sequenceDiagram
