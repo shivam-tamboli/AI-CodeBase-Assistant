@@ -56,11 +56,16 @@ function App() {
   }, [chatHistory])
 
   // Intercept 401 responses globally — clears expired token and returns to login
+  // Auth endpoints (/auth/login, /auth/register) are excluded — their 401s mean
+  // wrong credentials, not an expired session, and are handled in their own catch blocks.
   useEffect(() => {
+    const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh']
     const id = axios.interceptors.response.use(
       (res) => res,
       (err) => {
-        if (err.response?.status === 401) {
+        const url = err.config?.url || ''
+        const isAuthEndpoint = AUTH_PATHS.some(p => url.includes(p))
+        if (err.response?.status === 401 && !isAuthEndpoint) {
           setToken('')
           setUsername('')
           localStorage.removeItem('token')
