@@ -9,11 +9,11 @@ This guide covers every step needed to deploy the AI Codebase Assistant: setting
 | Component | Platform | Notes |
 |---|---|---|
 | Database | MongoDB Atlas (M0 free) | Hosts the database and runs vector search |
-| Backend API | Render or Railway | Persistent server — no cold-start limits |
+| Backend API | Render | Persistent server — no cold-start limits |
 | Frontend | Vercel | Static hosting, automatic from GitHub |
 
-**Why Render/Railway and not Vercel for the backend?**  
-Vercel's free tier enforces a 10-second function execution limit. LLM calls in this project can take 15–30 seconds. Render and Railway provide persistent servers with no execution timeout on free plans.
+**Why Render and not Vercel for the backend?**  
+Vercel's free tier enforces a 10-second function execution limit. LLM calls in this project can take 15–30 seconds. Render provides a persistent server with no execution timeout on the free plan.
 
 ---
 
@@ -83,11 +83,13 @@ This step enables `$vectorSearch` HNSW indexing for semantic search. Without it 
 5. Set the index name to exactly `vector_search_index`.
 6. Click **Create Search Index**. Wait ~2 minutes for status to change to **Active**.
 
+> **Keyword search index**: The application also uses a compound text index (`content_name_text_index`) on the `chunks` collection — `content` weighted 1 and `metadata.name` weighted 5. This index is created automatically at startup; no manual Atlas configuration is required.
+
 ---
 
 ## Step 2 — Backend Deployment
 
-### Option A — Render (recommended)
+### Render
 
 1. Go to [render.com](https://render.com) and sign in with GitHub.
 2. Click **New** → **Web Service** → **Connect** your repository.
@@ -115,20 +117,7 @@ This step enables `$vectorSearch` HNSW indexing for semantic search. Without it 
 5. Click **Create Web Service**. Render builds and deploys automatically.
 6. Your backend URL will be: `https://your-app.onrender.com`
 
-> **Free tier note**: Render free tier spins down after 15 minutes of inactivity. The first request after a spin-down takes ~30 seconds (cold start). For a demo, this is acceptable. For production use, upgrade to a paid tier or use Railway.
-
-### Option B — Railway
-
-1. Go to [railway.app](https://railway.app) and sign in with GitHub.
-2. Click **New Project** → **Deploy from GitHub repo** → select your repository.
-3. Railway auto-detects Python. Set the start command:
-   ```
-   uvicorn backend.main:app --host 0.0.0.0 --port $PORT
-   ```
-4. Add the same environment variables as listed above under the **Variables** tab.
-5. Railway gives you a URL like `https://your-app.up.railway.app`.
-
-> Railway's free tier includes $5/month of usage, which is typically enough for a demo project with moderate traffic.
+> **Free tier note**: Render free tier spins down after 15 minutes of inactivity. The first request after a spin-down takes ~30 seconds (cold start). For a demo, this is acceptable. Upgrade to a paid tier to eliminate cold starts.
 
 ---
 
@@ -160,14 +149,14 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 | Key | Value |
 |---|---|
-| `VITE_API_URL` | Your Render/Railway backend URL (e.g., `https://your-app.onrender.com`) |
+| `VITE_API_URL` | Your Render backend URL (e.g., `https://your-app.onrender.com`) |
 
 5. Click **Deploy**.
 6. Vercel gives you a URL like `https://your-app.vercel.app`.
 
 ### Update CORS on the backend
 
-After the frontend is deployed, go back to your Render or Railway dashboard and update:
+After the frontend is deployed, go back to your Render dashboard and update:
 
 ```
 ALLOWED_ORIGINS=https://your-app.vercel.app
@@ -213,19 +202,4 @@ Full reference of all supported environment variables. See [`backend/.env.exampl
 
 ---
 
-## Troubleshooting Deployment
-
-**Backend crashes on startup**  
-Check the logs in Render/Railway. Most common cause: missing `OPENAI_API_KEY` or `MONGODB_URI`. The app raises a clear error if required environment variables are absent.
-
-**CORS errors in browser**  
-`ALLOWED_ORIGINS` does not include the frontend URL. Update the environment variable and redeploy the backend. Verify there are no trailing slashes in the URL.
-
-**MongoDB connection timeout**  
-Check **Network Access** in Atlas — the backend server's IP must be allowed. During initial setup, `0.0.0.0/0` (allow all) is the easiest option.
-
-**Vector Search returns no results after indexing**  
-Verify the index name is exactly `vector_search_index` and that `repository_id` is declared as a `filter` field (not `vector`). Check that the index status is **Active** in the Atlas UI.
-
-**Render cold start (first request is slow)**  
-This is expected on the free tier — the server spins down after 15 minutes of inactivity. The first request triggers a restart (~30 seconds). Subsequent requests are fast. Upgrade to a paid tier to eliminate cold starts.
+> For deployment-specific errors (startup crashes, CORS, cold starts, connection timeouts), see [TROUBLESHOOTING.md](../TROUBLESHOOTING.md#deployment-errors).

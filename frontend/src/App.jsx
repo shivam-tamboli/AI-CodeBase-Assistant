@@ -55,6 +55,29 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatHistory])
 
+  // Intercept 401 responses globally — clears expired token and returns to login
+  useEffect(() => {
+    const id = axios.interceptors.response.use(
+      (res) => res,
+      (err) => {
+        if (err.response?.status === 401) {
+          setToken('')
+          setUsername('')
+          localStorage.removeItem('token')
+          localStorage.removeItem('username')
+          setRepositories([])
+          setSessions([])
+          setActiveSessionId(null)
+          setChatHistory([])
+          setSelectedRepo('')
+          showToast('Session expired — please sign in again', 'error')
+        }
+        return Promise.reject(err)
+      }
+    )
+    return () => axios.interceptors.response.eject(id)
+  }, [])
+
   // Load repos on mount if already logged in (fixes page-refresh bug)
   useEffect(() => {
     if (token) fetchRepositories(token)

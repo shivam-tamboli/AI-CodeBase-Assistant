@@ -159,7 +159,7 @@ RRF is a parameter-free fusion algorithm: `score(d) = Σ 1/(rank(d) + k)` where 
 
 ## RAG Query Flow
 
-End-to-end flow from question to streamed answer.
+End-to-end flow from question to streamed answer. This is the authoritative detailed version — [README.md](README.md#architecture) has a simplified overview for quick orientation.
 
 ```mermaid
 sequenceDiagram
