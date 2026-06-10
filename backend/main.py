@@ -28,6 +28,8 @@ async def lifespan(app: FastAPI):
     
     db = Database.get_db()
     await db.users.create_index("username", unique=True)
+    await db.refresh_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await db.refresh_tokens.create_index("user_id")
     print("Users collection indexes initialized")
     
     from backend.services.vector_store import VectorStore
