@@ -5,6 +5,8 @@ import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+axios.defaults.withCredentials = true
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
   const [username, setUsername] = useState(localStorage.getItem('username') || '')
@@ -55,29 +57,68 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatHistory])
 
-  // Intercept 401 responses globally — clears expired token and returns to login
-  // Auth endpoints (/auth/login, /auth/register) are excluded — their 401s mean
-  // wrong credentials, not an expired session, and are handled in their own catch blocks.
+  // Intercept 401 responses — attempt silent token refresh before logging out.
+  // Auth endpoints are excluded: their 401s mean wrong credentials, not expiry.
   useEffect(() => {
     const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh']
+    let isRefreshing = false
+    let queue = []
+
+    const processQueue = (error, newToken = null) => {
+      queue.forEach(({ resolve, reject }) => error ? reject(error) : resolve(newToken))
+      queue = []
+    }
+
+    const forceLogout = () => {
+      setToken('')
+      setUsername('')
+      localStorage.removeItem('token')
+      localStorage.removeItem('username')
+      setRepositories([])
+      setSessions([])
+      setActiveSessionId(null)
+      setChatHistory([])
+      setSelectedRepo('')
+      showToast('Session expired — please sign in again', 'error')
+    }
+
     const id = axios.interceptors.response.use(
       (res) => res,
-      (err) => {
-        const url = err.config?.url || ''
+      async (err) => {
+        const original = err.config
+        const url = original?.url || ''
         const isAuthEndpoint = AUTH_PATHS.some(p => url.includes(p))
-        if (err.response?.status === 401 && !isAuthEndpoint) {
-          setToken('')
-          setUsername('')
-          localStorage.removeItem('token')
-          localStorage.removeItem('username')
-          setRepositories([])
-          setSessions([])
-          setActiveSessionId(null)
-          setChatHistory([])
-          setSelectedRepo('')
-          showToast('Session expired — please sign in again', 'error')
+
+        if (err.response?.status !== 401 || isAuthEndpoint || original._retry) {
+          return Promise.reject(err)
         }
-        return Promise.reject(err)
+
+        if (isRefreshing) {
+          return new Promise((resolve, reject) => queue.push({ resolve, reject }))
+            .then(newToken => {
+              original.headers.Authorization = `Bearer ${newToken}`
+              return axios(original)
+            })
+        }
+
+        original._retry = true
+        isRefreshing = true
+
+        try {
+          const res = await axios.post(`${API_URL}/auth/refresh`)
+          const newToken = res.data.access_token
+          setToken(newToken)
+          localStorage.setItem('token', newToken)
+          original.headers.Authorization = `Bearer ${newToken}`
+          processQueue(null, newToken)
+          return axios(original)
+        } catch {
+          processQueue(new Error('Refresh failed'), null)
+          forceLogout()
+          return Promise.reject(err)
+        } finally {
+          isRefreshing = false
+        }
       }
     )
     return () => axios.interceptors.response.eject(id)
@@ -168,7 +209,8 @@ function App() {
     }
   }
 
-  const logout = () => {
+  const logout = async () => {
+    try { await axios.post(`${API_URL}/auth/logout`) } catch {}
     setToken('')
     setUsername('')
     localStorage.removeItem('token')
