@@ -130,6 +130,7 @@ No frontend env vars needed for local dev — defaults to `http://localhost:8000
 | `COHERE_API_KEY` | No | — | Enables Cohere re-ranking; omit for BM25 fallback |
 | `GITHUB_TOKEN` | No | — | For importing private repositories |
 | `ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated CORS origins |
+| `ENVIRONMENT` | No | `development` | Set to `production` on Render — enables secure httpOnly cookies |
 
 ---
 
@@ -190,8 +191,10 @@ Authorization: Bearer <access_token>
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/auth/register` | `{username, password}` | `{access_token}` 201 |
-| POST | `/auth/login` | `{username, password}` | `{access_token}` 200 |
+| POST | `/auth/register` | `{username, password}` | `{access_token}` 201 + sets `refresh_token` cookie |
+| POST | `/auth/login` | `{username, password}` | `{access_token}` 200 + sets `refresh_token` cookie |
+| POST | `/auth/refresh` | — (reads httpOnly cookie) | `{access_token}` 200 |
+| POST | `/auth/logout` | — (reads httpOnly cookie) | 200, clears cookie |
 
 ### Repositories
 
