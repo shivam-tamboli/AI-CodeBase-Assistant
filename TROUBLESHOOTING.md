@@ -203,6 +203,25 @@ curl -X OPTIONS http://localhost:8000/auth/login \
 
 ---
 
+## Deployment Errors
+
+**Backend crashes on startup**  
+Check the logs in the Render dashboard. Most common cause: missing `OPENAI_API_KEY` or `MONGODB_URI`. The app raises a clear error on startup if required environment variables are absent.
+
+**CORS errors in browser**  
+`ALLOWED_ORIGINS` does not include the frontend URL. Update the variable in the Render dashboard and redeploy. Verify there are no trailing slashes in the URL.
+
+**MongoDB connection timeout after deployment**  
+Check **Network Access** in Atlas — the Render server's IP must be allowed. During initial setup, `0.0.0.0/0` (allow all) is the easiest option.
+
+**Vector Search returns no results after indexing**  
+Verify the Atlas index name is exactly `vector_search_index` and that `repository_id` is declared as a `filter` field (not `vector`). Check that the index status is **Active** in the Atlas UI.
+
+**Render cold start — first request is slow**  
+Expected on the free tier: the server spins down after 15 minutes of inactivity. The first request triggers a restart (~30 seconds). Subsequent requests are fast. Upgrade to a paid tier to eliminate cold starts.
+
+---
+
 ## Issues Found and Fixed (Debugging Session — 2026-05-22)
 
 | # | Issue | Root cause | Fix | PR |
