@@ -42,6 +42,7 @@ graph TB
         Repos[(repositories)]
         Chunks[(chunks)]
         Sessions[(chat_sessions)]
+        RTokens[(refresh_tokens)]
     end
 
     subgraph AIProviders["External AI Providers"]
@@ -50,8 +51,8 @@ graph TB
         COH[Cohere\ncross-encoder]
     end
 
-    UI -->|HTTP/JSON + Bearer token| API
-    UI -->|SSE stream| LLM
+    UI -->|HTTP/JSON POST + Bearer token\n(incl. /chat/query/stream)| API
+    API -->|SSE stream\n(StreamingResponse)| UI
     API --> Auth
     API --> RL
     API --> Proc
@@ -68,6 +69,7 @@ graph TB
     API --> Users
     API --> Repos
     API --> Sessions
+    API --> RTokens
 ```
 
 **Key design decisions:**
@@ -186,10 +188,13 @@ sequenceDiagram
     FastAPI->>LLMService: generate_streaming_answer(query, chunks, history)
     LLMService->>LLMService: _truncate_history (tiktoken, MAX_HISTORY_TOKENS=2000)
     LLMService->>LLMService: _build_messages → system + alternating user/assistant turns
-    LLMService-->>Browser: SSE: {type:token, token:"...", answer:"<acc>"}
-    LLMService-->>Browser: SSE: {type:token, ...} ×N
+    LLMService-->>FastAPI: yield {type:token, token, answer}
+    FastAPI-->>Browser: SSE: {type:token, token:"...", answer:"<acc>"}
+    LLMService-->>FastAPI: yield {type:token, ...} ×N
+    FastAPI-->>Browser: SSE: {type:token, ...} ×N
     LLMService->>LLMService: _validate_citations (regex vs chunk metadata)
-    LLMService-->>Browser: SSE: {type:done, answer, sources, citation_valid}
+    LLMService-->>FastAPI: yield {type:done, answer, sources, citation_valid}
+    FastAPI-->>Browser: SSE: {type:done, answer, sources, citation_valid}
 
     FastAPI->>ChatService: add_message(session_id, "user", question)
     FastAPI->>ChatService: add_message(session_id, "assistant", answer)
@@ -303,22 +308,33 @@ sequenceDiagram
     MongoDB-->>FastAPI: null (not found)
     FastAPI->>FastAPI: bcrypt.hash(password)
     FastAPI->>MongoDB: insert_one({username, hashed_password, created_at})
-    FastAPI->>FastAPI: create_access_token({sub: user_id, username})
-    FastAPI-->>Browser: {access_token, token_type: "bearer"}
+    FastAPI->>FastAPI: create_access_token (15 min)\ncreate_refresh_token (7 days)
+    FastAPI->>MongoDB: refresh_tokens.insert_one({token, user_id, expires_at})
+    FastAPI-->>Browser: {access_token, token_type: "bearer"}\nSet-Cookie: refresh_token (httpOnly)
 
-    Browser->>FastAPI: GET /repositories\nAuthorization: Bearer <token>
+    Browser->>FastAPI: GET /repositories\nAuthorization: Bearer <access_token>
     FastAPI->>FastAPI: verify_token → decode HS256\nextract user_id
     FastAPI->>MongoDB: find({user_id: ...})
     MongoDB-->>FastAPI: [{repo}, ...]
     FastAPI-->>Browser: [{repo}, ...]
+
+    Note over Browser,MongoDB: 15 minutes later — access token expired
+    Browser->>FastAPI: POST /auth/refresh\nCookie: refresh_token (sent automatically)
+    FastAPI->>FastAPI: verify_token(refresh_token)\ncheck payload.type == "refresh"
+    FastAPI->>MongoDB: refresh_tokens.find_one({token})
+    MongoDB-->>FastAPI: stored token (not revoked)
+    FastAPI->>FastAPI: create_access_token (new, 15 min)
+    FastAPI-->>Browser: {access_token, token_type: "bearer"}
 ```
 
 **Token details:**
 - Algorithm: HS256
-- Expiry: 24 hours (`exp` claim)
-- Payload fields: `sub` (user_id string), `username`, `iat`, `exp`
+- Access token expiry: 15 minutes (`ACCESS_TOKEN_EXPIRE_MINUTES` in `backend/auth/jwt.py`)
+- Refresh token expiry: 7 days (`REFRESH_TOKEN_EXPIRE_DAYS`) — also persisted server-side in the `refresh_tokens` collection so `/auth/logout` can revoke it before its `exp`
+- Payload fields: `sub` (user_id string), `username`, `iat`, `exp` — refresh tokens additionally carry `type: "refresh"`
 - Secret: `JWT_SECRET` environment variable — must be a strong random string in production
-- No refresh token flow — users re-authenticate after 24 hours
+- Refresh token is delivered only as an httpOnly cookie (`secure` + `samesite=none` in production, `lax` in development) — never readable by JS, never in the JSON body
+- Frontend behavior: `App.jsx`'s axios response interceptor catches a 401 on any non-auth endpoint, calls `POST /auth/refresh` once, retries the original request with the new access token, and force-logs-out if the refresh itself fails
 
 ---
 
@@ -382,6 +398,20 @@ updated_at       ISODate
 ```
 
 Messages are stored as an embedded array — efficient for reading the last N messages with a single document fetch. The `$push` operator appends new messages atomically.
+
+### `refresh_tokens`
+```
+_id           ObjectId
+token         string — the encoded JWT refresh token
+user_id       string — references users._id
+expires_at    ISODate — TTL index deletes the document automatically at this time
+```
+
+**Indexes on `refresh_tokens`:**
+- `expires_at_1` — TTL index (`expireAfterSeconds=0`); MongoDB auto-deletes the document once `expires_at` passes
+- `user_id_1` — standard index for per-user lookups
+
+Written on `POST /auth/register` and `POST /auth/login`; read on `POST /auth/refresh`; deleted on `POST /auth/logout`. Storing the token server-side (rather than trusting the JWT alone) is what makes it revocable — deleting the row invalidates that refresh token immediately, even though the JWT itself would still verify until its `exp`.
 
 ---
 
