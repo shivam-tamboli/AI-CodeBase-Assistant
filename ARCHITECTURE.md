@@ -100,8 +100,8 @@ flowchart TD
 
     J --> K{Language?}
     K -->|Python| L[ast_parser\nfunctions · classes · imports]
-    K -->|JS/TS/Go/Java\nRust/Ruby| M[treesitter_parser\nsymbol extraction]
-    K -->|PHP/C#/Swift/Kotlin\nor unknown| N[line-based\nsliding window]
+    K -->|JS/TS/Go/Java/Rust| M[treesitter_parser\nsymbol extraction]
+    K -->|Ruby/PHP/C#/Swift/Kotlin\nor unknown| N[line-based\nsliding window]
 
     L & M & N --> O[CodeChunker\nAST-aware boundaries\n100-token overlap]
 
@@ -421,7 +421,7 @@ Written on `POST /auth/register` and `POST /auth/login`; read on `POST /auth/ref
 |---|---|---|
 | `FileScanner` | `services/file_scanner.py` | Walk directory tree, return code files (15 extensions). Skip venv, node_modules, dist, etc. |
 | `ASTParser` | `services/ast_parser.py` | Python `ast` — extract functions, async functions, classes, imports with exact line ranges |
-| `TreeSitterParser` | `services/treesitter_parser.py` | tree-sitter grammars — JS/TS/Go/Java/Rust/Ruby symbol extraction |
+| `TreeSitterParser` | `services/treesitter_parser.py` | tree-sitter grammars — JS/TS/Go/Java/Rust symbol extraction. Ruby is coded but its grammar isn't in requirements.txt, so .rb files use line-based chunking instead |
 | `CodeChunker` | `services/chunker.py` | Create chunks from parsed symbols; split oversized chunks with token-based overlap |
 | `SummaryService` | `services/summary.py` | Optionally generate one-sentence LLM summaries per chunk (concurrency-limited with `asyncio.Semaphore(10)`) |
 | `EmbeddingService` | `services/embedding.py` | Thin wrapper over `EmbeddingProvider.embed_batch()` |

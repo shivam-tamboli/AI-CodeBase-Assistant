@@ -47,7 +47,8 @@ User question
 
 ```
 USERS ──< REPOSITORIES ──< CHUNKS
-  │
+  │            │
+  │            └──< CHAT_SESSIONS
   ├──< CHAT_SESSIONS
   └──< REFRESH_TOKENS
 ```
