@@ -45,6 +45,37 @@ def make_mock_collection():
     return col
 
 
+class _MockDatabase:
+    """Stand-in for a Motor database object.
+
+    db.<collection> and db["<collection>"] both return the same pre-wired
+    async mock collection, created the first time it's touched. This is
+    deliberately a plain class rather than a MagicMock: a bare MagicMock
+    auto-creates unknown attributes as plain (non-async) mocks, so any
+    collection nobody remembered to list here would silently break with
+    "TypeError: object MagicMock can't be used in 'await' expression" the
+    first time a test actually awaited one of its methods — which is
+    exactly what happened when refresh_tokens was added and this fixture
+    wasn't updated to match. Lazily creating collections on first access
+    means a new collection just works without this file needing a matching
+    edit every time the backend starts using one.
+    """
+
+    def __init__(self):
+        self._collections = {}
+
+    def _get(self, name):
+        if name not in self._collections:
+            self._collections[name] = make_mock_collection()
+        return self._collections[name]
+
+    def __getattr__(self, name):
+        return self._get(name)
+
+    def __getitem__(self, name):
+        return self._get(name)
+
+
 @pytest.fixture
 def mock_db():
     """Mock DB whose collections are pre-wired with async mocks.
@@ -52,23 +83,7 @@ def mock_db():
     Supports both attribute access (db.users) and item access (db["chat_sessions"])
     because different services use different access patterns.
     """
-    db = MagicMock()
-    collections = {
-        "users": make_mock_collection(),
-        "repositories": make_mock_collection(),
-        "chunks": make_mock_collection(),
-        "chat_sessions": make_mock_collection(),
-        "refresh_tokens": make_mock_collection(),
-    }
-    # Attribute access
-    db.users = collections["users"]
-    db.repositories = collections["repositories"]
-    db.chunks = collections["chunks"]
-    db.chat_sessions = collections["chat_sessions"]
-    db.refresh_tokens = collections["refresh_tokens"]
-    # Item access (db["chat_sessions"]) — used by ChatService
-    db.__getitem__ = lambda self, key: collections.get(key, make_mock_collection())
-    return db
+    return _MockDatabase()
 
 
 # ---------------------------------------------------------------------------

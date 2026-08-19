@@ -94,6 +94,8 @@ The rule: **no business logic in API handlers**. Route handlers validate input, 
 
 6. **Open a PR** against `main`. Link the related issue in the PR description (`Closes #N`).
 
+7. **CI runs automatically** on every push and PR (`.github/workflows/tests.yml`) — it just runs the same `pytest backend/tests/ -q` command from step 4. A red check means something broke; fix it before merging.
+
 ---
 
 ## Code Style
