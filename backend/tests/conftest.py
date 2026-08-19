@@ -58,12 +58,14 @@ def mock_db():
         "repositories": make_mock_collection(),
         "chunks": make_mock_collection(),
         "chat_sessions": make_mock_collection(),
+        "refresh_tokens": make_mock_collection(),
     }
     # Attribute access
     db.users = collections["users"]
     db.repositories = collections["repositories"]
     db.chunks = collections["chunks"]
     db.chat_sessions = collections["chat_sessions"]
+    db.refresh_tokens = collections["refresh_tokens"]
     # Item access (db["chat_sessions"]) — used by ChatService
     db.__getitem__ = lambda self, key: collections.get(key, make_mock_collection())
     return db
