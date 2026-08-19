@@ -51,8 +51,8 @@ graph TB
         COH[Cohere\ncross-encoder]
     end
 
-    UI -->|HTTP/JSON POST + Bearer token\n(incl. /chat/query/stream)| API
-    API -->|SSE stream\n(StreamingResponse)| UI
+    UI -->|"HTTP/JSON POST + Bearer token\nincl. /chat/query/stream"| API
+    API -->|"SSE stream via StreamingResponse"| UI
     API --> Auth
     API --> RL
     API --> Proc
