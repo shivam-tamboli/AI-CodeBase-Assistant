@@ -93,17 +93,17 @@ def get_llm_provider() -> LLMProvider:
     provider = os.getenv("LLM_PROVIDER", "openai").lower()
     model = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
-    if provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
-        return OpenAILLMProvider(api_key=api_key, model=model)
-
     if provider == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic")
+            raise ValueError("ANTHROPIC_API_KEY must be set when LLM_PROVIDER=anthropic")
         return AnthropicLLMProvider(api_key=api_key, model=model)
+
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY must be set when LLM_PROVIDER=openai")
+        return OpenAILLMProvider(api_key=api_key, model=model)
 
     raise ValueError(f"Unknown LLM_PROVIDER: {provider!r}")
 
@@ -115,7 +115,7 @@ def get_embedding_provider() -> EmbeddingProvider:
     if provider == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai")
+            raise ValueError("OPENAI_API_KEY must be set when EMBEDDING_PROVIDER=openai")
         return OpenAIEmbeddingProvider(api_key=api_key, model=model)
 
     raise ValueError(f"Unknown EMBEDDING_PROVIDER: {provider!r}")

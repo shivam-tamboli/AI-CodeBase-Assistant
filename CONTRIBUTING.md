@@ -52,6 +52,8 @@ frontend/src/         — React SPA (single file: App.jsx)
 
 The rule: **no business logic in API handlers**. Route handlers validate input, call services, and return responses. Everything that does real work lives in `backend/services/`.
 
+(`repositories.py`'s upload/import routes are the one exception — they handle zip extraction and git cloning directly. Don't use them as a pattern for new routes.)
+
 ---
 
 ## Branch Naming
