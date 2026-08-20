@@ -68,9 +68,12 @@ function AuthStoryPanel() {
 
     // Phase 0 — Pipeline
     if (phase === 0) {
-      for (let i = 0; i <= 6; i++) {
-        timers.push(setTimeout(() => setPipelineStep(i), 400 + i * 600))
-      }
+      timers.push(setTimeout(() => setPipelineStep(1), 300))
+      timers.push(setTimeout(() => setPipelineStep(2), 900))
+      timers.push(setTimeout(() => setPipelineStep(3), 1500))
+      timers.push(setTimeout(() => setPipelineStep(4), 2100))
+      timers.push(setTimeout(() => setPipelineStep(5), 2900))
+      timers.push(setTimeout(() => setPipelineStep(6), 3700))
     }
 
     // Phase 1 — Query simulation
@@ -138,40 +141,75 @@ function AuthStoryPanel() {
 
         {/* PHASE 0 — RAG Pipeline */}
         {phase === 0 && (
-          <div className="pipeline-diagram">
-            <div className="pipeline-row">
-              <div className={`pipeline-node ${pipelineStep >= 1 ? 'lit' : ''}`}>
-                <span className="node-icon">💬</span> Your Question
+          <div className="pipeline-wrap">
+
+            {/* Row 1: Question → AST Parser → Split */}
+            <div className="pipeline-track">
+              <div className={`pipeline-node-v2 ${pipelineStep >= 1 ? 'lit' : ''}`}>
+                <div className="pipeline-node-box">💬</div>
+                <span className="pipeline-node-label">Query</span>
               </div>
-              <div className={`pipeline-arrow ${pipelineStep >= 2 ? 'lit' : ''}`}>→</div>
-              <div className={`pipeline-node ${pipelineStep >= 2 ? 'lit' : ''}`}>
-                <span className="node-icon">⚡</span> AST Parser
+              <div className="pipeline-connector">
+                <div className={`pipeline-connector-fill cyan ${pipelineStep >= 2 ? 'active' : ''}`} />
               </div>
-            </div>
-            <div className="pipeline-row" style={{ paddingLeft: '1rem' }}>
-              <div className={`pipeline-arrow ${pipelineStep >= 3 ? 'lit' : ''}`} style={{ transform: 'rotate(90deg)' }}>→</div>
-            </div>
-            <div className="pipeline-row">
-              <div className={`pipeline-node ${pipelineStep >= 3 ? 'lit' : ''}`}>
-                <span className="node-icon">🔍</span> BM25 Search
+              <div className={`pipeline-node-v2 ${pipelineStep >= 2 ? 'lit' : ''}`}>
+                <div className="pipeline-node-box">⚙️</div>
+                <span className="pipeline-node-label">AST Parse</span>
               </div>
-              <div className={`pipeline-merge-label ${pipelineStep >= 4 ? 'lit' : ''}`} style={{ margin: '0 0.5rem' }}>RRF k=60</div>
-              <div className={`pipeline-node ${pipelineStep >= 3 ? 'lit' : ''}`}>
-                <span className="node-icon">🧠</span> Semantic Search
+              <div className="pipeline-connector">
+                <div className={`pipeline-connector-fill cyan ${pipelineStep >= 3 ? 'active' : ''}`} />
               </div>
-            </div>
-            <div className="pipeline-row" style={{ paddingLeft: '1rem' }}>
-              <div className={`pipeline-arrow ${pipelineStep >= 4 ? 'lit' : ''}`} style={{ transform: 'rotate(90deg)' }}>→</div>
-            </div>
-            <div className="pipeline-row">
-              <div className={`pipeline-node ${pipelineStep >= 5 ? 'lit' : ''}`}>
-                <span className="node-icon">🎯</span> Cohere Reranking
-              </div>
-              <div className={`pipeline-arrow ${pipelineStep >= 6 ? 'lit' : ''}`}>→</div>
-              <div className={`pipeline-node ${pipelineStep >= 6 ? 'lit' : ''}`}>
-                <span className="node-icon">✅</span> Cited Answer
+              <div className={`pipeline-node-v2 ${pipelineStep >= 3 ? 'lit' : ''}`}>
+                <div className="pipeline-node-box">⚡</div>
+                <span className="pipeline-node-label">Chunk</span>
               </div>
             </div>
+
+            {/* Row 2: Dual search streams merging */}
+            <div className="pipeline-merge">
+              <div className="pipeline-merge-row">
+                <div className={`pipeline-merge-branch ${pipelineStep >= 4 ? 'lit' : ''}`}>
+                  <div className="pipeline-branch-node cyan">🔍 BM25</div>
+                  <div className="pipeline-branch-line">
+                    <div className={`pipeline-branch-line-fill cyan ${pipelineStep >= 5 ? 'active' : ''}`} />
+                  </div>
+                </div>
+                <div className={`pipeline-rrf-badge ${pipelineStep >= 5 ? 'lit' : ''}`}>RRF k=60</div>
+              </div>
+              <div className="pipeline-merge-row">
+                <div className={`pipeline-merge-branch ${pipelineStep >= 4 ? 'lit' : ''}`}>
+                  <div className="pipeline-branch-node purple">🧠 Semantic</div>
+                  <div className="pipeline-branch-line">
+                    <div className={`pipeline-branch-line-fill purple ${pipelineStep >= 5 ? 'active' : ''}`} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 3: Reranker → Answer */}
+            <div className="pipeline-track">
+              <div className={`pipeline-node-v2 lit-purple ${pipelineStep >= 5 ? 'lit-purple' : ''}`}
+                   style={{ opacity: pipelineStep >= 5 ? 1 : 0, transform: pipelineStep >= 5 ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.4s ease' }}>
+                <div className="pipeline-node-box">🎯</div>
+                <span className="pipeline-node-label">Cohere Rerank</span>
+              </div>
+              <div className="pipeline-connector">
+                <div className={`pipeline-connector-fill purple ${pipelineStep >= 6 ? 'active' : ''}`} />
+              </div>
+              <div className={`pipeline-node-v2 ${pipelineStep >= 6 ? 'lit-green' : ''}`}
+                   style={{ opacity: pipelineStep >= 6 ? 1 : 0, transform: pipelineStep >= 6 ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.4s ease' }}>
+                <div className="pipeline-node-box">✅</div>
+                <span className="pipeline-node-label">Cited Answer</span>
+              </div>
+              <div className="pipeline-connector">
+                <div className={`pipeline-connector-fill green ${pipelineStep >= 6 ? 'active' : ''}`} />
+              </div>
+              <div className={`pipeline-score-counter ${pipelineStep >= 6 ? 'lit' : ''}`}
+                   style={{ alignSelf: 'center', marginBottom: '1.4rem' }}>
+                score: 0.94
+              </div>
+            </div>
+
           </div>
         )}
 
