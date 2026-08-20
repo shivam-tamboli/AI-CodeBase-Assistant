@@ -578,7 +578,10 @@ function App() {
 
           {/* Upload ZIP */}
           <div className="sidebar-section">
-            <div className="section-label">Upload Repository</div>
+            <div className="section-label">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Upload Repository
+            </div>
             <div className="input-group">
               <label className="file-label">
                 <span>📁</span>
@@ -605,7 +608,10 @@ function App() {
 
           {/* GitHub Import */}
           <div className="sidebar-section">
-            <div className="section-label">Import from GitHub</div>
+            <div className="section-label">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              Import from GitHub
+            </div>
             <div className="input-group">
               <input
                 className="text-input"
@@ -630,7 +636,10 @@ function App() {
 
           {/* Repository select */}
           <div className="sidebar-section">
-            <div className="section-label">Active Repository</div>
+            <div className="section-label">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Active Repository
+            </div>
             <select
               className="repo-select"
               value={selectedRepo}
@@ -643,12 +652,27 @@ function App() {
                 </option>
               ))}
             </select>
+            {activeRepo && (
+              <div className="repo-card">
+                <span className="repo-card-name">{activeRepo.name}</span>
+                <span className={`repo-card-badge ${activeRepo.status}`}>
+                  {activeRepo.status === 'indexed'
+                    ? '✓ Ready'
+                    : activeRepo.status === 'indexing'
+                    ? 'Indexing…'
+                    : 'Failed'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Re-index (only when repo selected) */}
           {selectedRepo && (
             <div className="sidebar-section">
-              <div className="section-label">Re-index Repository</div>
+              <div className="section-label">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Re-index Repository
+              </div>
               <div className="input-group">
                 <label className="file-label">
                   <span>📁</span>
@@ -678,7 +702,10 @@ function App() {
           {selectedRepo && (
             <div className="sidebar-section" style={{ flex: 1, overflowY: 'auto' }}>
               <div className="sessions-header">
-                <div className="section-label" style={{ margin: 0 }}>Conversations</div>
+                <div className="section-label" style={{ margin: 0 }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  Conversations
+                </div>
                 <button className="btn btn-new-chat" onClick={startNewSession}>+ New</button>
               </div>
               {sessions.length === 0 ? (
@@ -692,8 +719,14 @@ function App() {
                       onClick={() => selectSession(session.id)}
                     >
                       <div className="session-info">
-                        <span className="session-date">{formatTime(session.updated_at || session.created_at)}</span>
-                        <span className="session-count">{session.message_count} messages</span>
+                        <span className="session-preview">
+                          {session.first_message
+                            ? session.first_message.slice(0, 28) + (session.first_message.length > 28 ? '…' : '')
+                            : `Chat · ${formatTime(session.created_at)}`}
+                        </span>
+                        <span className="session-meta">
+                          {session.message_count} msgs · {formatTime(session.updated_at || session.created_at)}
+                        </span>
                       </div>
                       <button
                         className="session-delete-btn"
@@ -713,9 +746,27 @@ function App() {
         <section className="chat-section">
           {!selectedRepo ? (
             <div className="empty-state">
-              <div className="empty-state-icon">💬</div>
-              <h3>Select a repository to start</h3>
-              <p>Upload a ZIP or import from GitHub, then select it from the dropdown above.</p>
+              <div className="empty-state-icon">⚡</div>
+              <h3>AI Codebase Assistant</h3>
+              <p>Upload or import a repository, then ask questions about it in plain English.</p>
+              <div className="empty-state-features">
+                <div className="feature-row">
+                  <span className="feature-row-icon">🔍</span>
+                  Hybrid semantic + BM25 search
+                </div>
+                <div className="feature-row">
+                  <span className="feature-row-icon">📎</span>
+                  Cited answers with file & line numbers
+                </div>
+                <div className="feature-row">
+                  <span className="feature-row-icon">💬</span>
+                  Persistent multi-session conversations
+                </div>
+                <div className="feature-row">
+                  <span className="feature-row-icon">⚡</span>
+                  Streaming responses via SSE
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -736,6 +787,7 @@ function App() {
               )}
 
               <div className="chat-messages">
+               <div className="messages-inner">
                 {chatHistory.length === 0 && (
                   <div className="empty-chat">
                     <div className="empty-chat-icon">💬</div>
@@ -789,7 +841,15 @@ function App() {
                               {src.name && (
                                 <span className="chunk-name"> · {src.chunk_type}: {src.name}</span>
                               )}
-                              <span className="score">{src.score?.toFixed(3)}</span>
+                              <span
+                                className="score"
+                                style={{
+                                  color: src.score < 0 ? 'var(--amber)' : 'var(--green)',
+                                  background: src.score < 0 ? 'rgba(245,158,11,0.1)' : 'var(--green-subtle)'
+                                }}
+                              >
+                                {src.score?.toFixed(3)}
+                              </span>
                             </li>
                           ))}
                         </ul>
@@ -801,9 +861,11 @@ function App() {
                 ))}
 
                 <div ref={chatEndRef} />
+               </div>
               </div>
 
               <div className="chat-input-area">
+               <div className="chat-input-inner">
                 <div className="input-wrapper">
                   <textarea
                     className="chat-textarea"
@@ -818,11 +880,22 @@ function App() {
                     className="send-btn"
                     onClick={askQuestion}
                     disabled={chatLoading || !question.trim() || !repoReady}
+                    title="Send"
                   >
-                    {chatLoading ? '...' : 'Send ↑'}
+                    {chatLoading ? (
+                      <div className="thinking-dots" style={{ gap: '3px' }}>
+                        <span /><span /><span />
+                      </div>
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="19" x2="12" y2="5"/>
+                        <polyline points="5 12 12 5 19 12"/>
+                      </svg>
+                    )}
                   </button>
                 </div>
                 <p className="input-hint">Enter to send · Shift+Enter for new line</p>
+               </div>
               </div>
             </>
           )}
