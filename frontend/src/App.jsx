@@ -146,21 +146,36 @@ function AuthStoryPanel() {
             {/* Row 1: Question → AST Parser → Split */}
             <div className="pipeline-track">
               <div className={`pipeline-node-v2 ${pipelineStep >= 1 ? 'lit' : ''}`}>
-                <div className="pipeline-node-box">💬</div>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </div>
                 <span className="pipeline-node-label">Query</span>
               </div>
               <div className="pipeline-connector">
                 <div className={`pipeline-connector-fill cyan ${pipelineStep >= 2 ? 'active' : ''}`} />
               </div>
               <div className={`pipeline-node-v2 ${pipelineStep >= 2 ? 'lit' : ''}`}>
-                <div className="pipeline-node-box">⚙️</div>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                  </svg>
+                </div>
                 <span className="pipeline-node-label">AST Parse</span>
               </div>
               <div className="pipeline-connector">
                 <div className={`pipeline-connector-fill cyan ${pipelineStep >= 3 ? 'active' : ''}`} />
               </div>
               <div className={`pipeline-node-v2 ${pipelineStep >= 3 ? 'lit' : ''}`}>
-                <div className="pipeline-node-box">⚡</div>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="3" width="6" height="18" rx="1"/>
+                    <rect x="9" y="3" width="6" height="18" rx="1"/>
+                    <rect x="16" y="3" width="6" height="18" rx="1"/>
+                  </svg>
+                </div>
                 <span className="pipeline-node-label">Chunk</span>
               </div>
             </div>
@@ -169,7 +184,14 @@ function AuthStoryPanel() {
             <div className="pipeline-merge">
               <div className="pipeline-merge-row">
                 <div className={`pipeline-merge-branch ${pipelineStep >= 4 ? 'lit' : ''}`}>
-                  <div className="pipeline-branch-node cyan">🔍 BM25</div>
+                  <div className="pipeline-branch-node cyan">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="4" y1="6" x2="20" y2="6"/>
+                      <line x1="4" y1="12" x2="14" y2="12"/>
+                      <line x1="4" y1="18" x2="10" y2="18"/>
+                    </svg>
+                    BM25
+                  </div>
                   <div className="pipeline-branch-line">
                     <div className={`pipeline-branch-line-fill cyan ${pipelineStep >= 5 ? 'active' : ''}`} />
                   </div>
@@ -178,7 +200,20 @@ function AuthStoryPanel() {
               </div>
               <div className="pipeline-merge-row">
                 <div className={`pipeline-merge-branch ${pipelineStep >= 4 ? 'lit' : ''}`}>
-                  <div className="pipeline-branch-node purple">🧠 Semantic</div>
+                  <div className="pipeline-branch-node purple">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="4" cy="6" r="2"/>
+                      <circle cx="20" cy="6" r="2"/>
+                      <circle cx="4" cy="18" r="2"/>
+                      <circle cx="20" cy="18" r="2"/>
+                      <line x1="6" y1="7" x2="10" y2="10"/>
+                      <line x1="18" y1="7" x2="14" y2="10"/>
+                      <line x1="6" y1="17" x2="10" y2="14"/>
+                      <line x1="18" y1="17" x2="14" y2="14"/>
+                    </svg>
+                    Semantic
+                  </div>
                   <div className="pipeline-branch-line">
                     <div className={`pipeline-branch-line-fill purple ${pipelineStep >= 5 ? 'active' : ''}`} />
                   </div>
@@ -190,7 +225,14 @@ function AuthStoryPanel() {
             <div className="pipeline-track">
               <div className={`pipeline-node-v2 lit-purple ${pipelineStep >= 5 ? 'lit-purple' : ''}`}
                    style={{ opacity: pipelineStep >= 5 ? 1 : 0, transform: pipelineStep >= 5 ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.4s ease' }}>
-                <div className="pipeline-node-box">🎯</div>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <line x1="3" y1="12" x2="15" y2="12"/>
+                    <line x1="3" y1="18" x2="9" y2="18"/>
+                    <polyline points="17 15 21 12 17 9"/>
+                  </svg>
+                </div>
                 <span className="pipeline-node-label">Cohere Rerank</span>
               </div>
               <div className="pipeline-connector">
@@ -198,7 +240,12 @@ function AuthStoryPanel() {
               </div>
               <div className={`pipeline-node-v2 ${pipelineStep >= 6 ? 'lit-green' : ''}`}
                    style={{ opacity: pipelineStep >= 6 ? 1 : 0, transform: pipelineStep >= 6 ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.4s ease' }}>
-                <div className="pipeline-node-box">✅</div>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="8 12 11 15 16 9"/>
+                  </svg>
+                </div>
                 <span className="pipeline-node-label">Cited Answer</span>
               </div>
               <div className="pipeline-connector">

@@ -1966,6 +1966,19 @@ header h1 {
   font-size: 1.1rem;
   transition: all 0.4s ease;
   position: relative;
+  color: var(--text-muted);
+}
+
+.pipeline-node-v2.lit .pipeline-node-box {
+  color: var(--accent);
+}
+
+.pipeline-node-v2.lit-purple .pipeline-node-box {
+  color: var(--purple);
+}
+
+.pipeline-node-v2.lit-green .pipeline-node-box {
+  color: var(--green);
 }
 
 .pipeline-node-v2.lit .pipeline-node-box {
