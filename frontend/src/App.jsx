@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
@@ -6,6 +6,278 @@ import './App.css'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 axios.defaults.withCredentials = true
+
+function AuthStoryPanel() {
+  const [phase, setPhase] = React.useState(0)
+  const [visible, setVisible] = React.useState(false)
+  const [progress, setProgress] = React.useState(0)
+  const [pipelineStep, setPipelineStep] = React.useState(0)
+  const [simQuestion, setSimQuestion] = React.useState('')
+  const [simAnswer, setSimAnswer] = React.useState('')
+  const [simAnswerVisible, setSimAnswerVisible] = React.useState(false)
+  const [simSourceVisible, setSimSourceVisible] = React.useState(false)
+  const [explorerRows, setExplorerRows] = React.useState([])
+  const [explorerHighlight, setExplorerHighlight] = React.useState(null)
+  const [explorerSearch, setExplorerSearch] = React.useState(null)
+  const [explorerBadge, setExplorerBadge] = React.useState(null)
+
+  const PHASE_DURATION = [5000, 6000, 5500, 4500]
+  const PHASES = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'API Usage']
+
+  const QUESTION_TEXT = 'How does authentication work?'
+  const ANSWER_TEXT = 'Authentication uses JWT tokens. The AuthService validates credentials, generates a signed token, and attaches it to every request via middleware.'
+
+  const EXPLORER_ITEMS = [
+    { id: 0, indent: '', icon: '📁', name: 'src/', type: 'folder' },
+    { id: 1, indent: 'indent-1', icon: '📁', name: 'auth/', type: 'folder' },
+    { id: 2, indent: 'indent-2', icon: '🐍', name: 'auth_service.py', type: 'file', badge: '41 chunks' },
+    { id: 3, indent: 'indent-2', icon: '🐍', name: 'jwt_handler.py', type: 'file', badge: '28 chunks' },
+    { id: 4, indent: 'indent-1', icon: '📁', name: 'routes/', type: 'folder' },
+    { id: 5, indent: 'indent-2', icon: '🐍', name: 'query.py', type: 'file' },
+    { id: 6, indent: 'indent-2', icon: '🐍', name: 'repository.py', type: 'file' },
+  ]
+
+  const resetPhaseState = () => {
+    setPipelineStep(0)
+    setSimQuestion('')
+    setSimAnswer('')
+    setSimAnswerVisible(false)
+    setSimSourceVisible(false)
+    setExplorerRows([])
+    setExplorerHighlight(null)
+    setExplorerSearch(null)
+    setExplorerBadge(null)
+  }
+
+  React.useEffect(() => {
+    const timers = []
+    setVisible(false)
+    setProgress(0)
+    resetPhaseState()
+
+    timers.push(setTimeout(() => setVisible(true), 100))
+
+    const duration = PHASE_DURATION[phase]
+    const startTime = Date.now()
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const pct = Math.min((elapsed / duration) * 100, 100)
+      setProgress(pct)
+    }, 50)
+    timers.push(progressInterval)
+
+    // Phase 0 — Pipeline
+    if (phase === 0) {
+      for (let i = 0; i <= 6; i++) {
+        timers.push(setTimeout(() => setPipelineStep(i), 400 + i * 600))
+      }
+    }
+
+    // Phase 1 — Query simulation
+    if (phase === 1) {
+      let q = ''
+      QUESTION_TEXT.split('').forEach((char, i) => {
+        timers.push(setTimeout(() => {
+          q += char
+          setSimQuestion(q)
+        }, 300 + i * 45))
+      })
+      const afterQ = 300 + QUESTION_TEXT.length * 45 + 400
+      timers.push(setTimeout(() => setSimAnswerVisible(true), afterQ))
+      let a = ''
+      ANSWER_TEXT.split('').forEach((char, i) => {
+        timers.push(setTimeout(() => {
+          a += char
+          setSimAnswer(a)
+        }, afterQ + 200 + i * 18))
+      })
+      const afterA = afterQ + 200 + ANSWER_TEXT.length * 18 + 300
+      timers.push(setTimeout(() => setSimSourceVisible(true), afterA))
+    }
+
+    // Phase 2 — Explorer
+    if (phase === 2) {
+      EXPLORER_ITEMS.forEach((item, i) => {
+        timers.push(setTimeout(() => {
+          setExplorerRows(prev => [...prev, item.id])
+        }, 300 + i * 280))
+      })
+      timers.push(setTimeout(() => setExplorerHighlight(2), 300 + EXPLORER_ITEMS.length * 280 + 200))
+      timers.push(setTimeout(() => setExplorerSearch(2), 300 + EXPLORER_ITEMS.length * 280 + 600))
+      timers.push(setTimeout(() => {
+        setExplorerSearch(3)
+        setExplorerHighlight(3)
+      }, 300 + EXPLORER_ITEMS.length * 280 + 1400))
+      timers.push(setTimeout(() => setExplorerBadge(3), 300 + EXPLORER_ITEMS.length * 280 + 1800))
+    }
+
+    // Advance to next phase
+    const nextTimer = setTimeout(() => {
+      setVisible(false)
+      setTimeout(() => {
+        setPhase(p => (p + 1) % 4)
+      }, 400)
+    }, duration - 400)
+    timers.push(nextTimer)
+
+    return () => {
+      timers.forEach(t => { if (typeof t === 'number') clearTimeout(t); else clearInterval(t) })
+    }
+  }, [phase])
+
+  const phaseLabels = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'API Usage']
+
+  return (
+    <div className="auth-story">
+      <div className={`phase-label ${visible ? 'visible' : ''}`}>
+        <div className="phase-dot" />
+        {phaseLabels[phase]}
+      </div>
+
+      <div className={`phase-content ${visible ? 'visible' : ''}`}>
+
+        {/* PHASE 0 — RAG Pipeline */}
+        {phase === 0 && (
+          <div className="pipeline-diagram">
+            <div className="pipeline-row">
+              <div className={`pipeline-node ${pipelineStep >= 1 ? 'lit' : ''}`}>
+                <span className="node-icon">💬</span> Your Question
+              </div>
+              <div className={`pipeline-arrow ${pipelineStep >= 2 ? 'lit' : ''}`}>→</div>
+              <div className={`pipeline-node ${pipelineStep >= 2 ? 'lit' : ''}`}>
+                <span className="node-icon">⚡</span> AST Parser
+              </div>
+            </div>
+            <div className="pipeline-row" style={{ paddingLeft: '1rem' }}>
+              <div className={`pipeline-arrow ${pipelineStep >= 3 ? 'lit' : ''}`} style={{ transform: 'rotate(90deg)' }}>→</div>
+            </div>
+            <div className="pipeline-row">
+              <div className={`pipeline-node ${pipelineStep >= 3 ? 'lit' : ''}`}>
+                <span className="node-icon">🔍</span> BM25 Search
+              </div>
+              <div className={`pipeline-merge-label ${pipelineStep >= 4 ? 'lit' : ''}`} style={{ margin: '0 0.5rem' }}>RRF k=60</div>
+              <div className={`pipeline-node ${pipelineStep >= 3 ? 'lit' : ''}`}>
+                <span className="node-icon">🧠</span> Semantic Search
+              </div>
+            </div>
+            <div className="pipeline-row" style={{ paddingLeft: '1rem' }}>
+              <div className={`pipeline-arrow ${pipelineStep >= 4 ? 'lit' : ''}`} style={{ transform: 'rotate(90deg)' }}>→</div>
+            </div>
+            <div className="pipeline-row">
+              <div className={`pipeline-node ${pipelineStep >= 5 ? 'lit' : ''}`}>
+                <span className="node-icon">🎯</span> Cohere Reranking
+              </div>
+              <div className={`pipeline-arrow ${pipelineStep >= 6 ? 'lit' : ''}`}>→</div>
+              <div className={`pipeline-node ${pipelineStep >= 6 ? 'lit' : ''}`}>
+                <span className="node-icon">✅</span> Cited Answer
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 1 — Live Query */}
+        {phase === 1 && (
+          <div className="query-simulation">
+            <div className="sim-bar">
+              <div className="sim-dot sim-dot-red" />
+              <div className="sim-dot sim-dot-amber" />
+              <div className="sim-dot sim-dot-green" />
+            </div>
+            <div className="sim-question">
+              <div className="sim-avatar-user">S</div>
+              <div className="sim-bubble-user">
+                {simQuestion}
+                {simQuestion.length < QUESTION_TEXT.length && <span className="sim-cursor" />}
+              </div>
+            </div>
+            <div className={`sim-answer-wrap ${simAnswerVisible ? 'visible' : ''}`}>
+              <div className="sim-avatar-ai">AI</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1 }}>
+                <div className="sim-bubble-ai">
+                  {simAnswer}
+                  {simAnswerVisible && simAnswer.length < ANSWER_TEXT.length && <span className="sim-cursor" />}
+                </div>
+                <div className={`sim-source-pill ${simSourceVisible ? 'visible' : ''}`}>
+                  📌 auth/auth_service.py · L12–58 · score 0.94
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 2 — Codebase Explorer */}
+        {phase === 2 && (
+          <div className="explorer-wrap">
+            <div className="explorer-titlebar">
+              <div className="code-dot code-dot-red" />
+              <div className="code-dot code-dot-amber" />
+              <div className="code-dot code-dot-green" />
+              <span className="explorer-title-text">your-project · indexing</span>
+            </div>
+            <div className="explorer-body">
+              {EXPLORER_ITEMS.map(item => (
+                <div
+                  key={item.id}
+                  className={[
+                    'explorer-row',
+                    item.indent ? `explorer-${item.indent}` : '',
+                    explorerRows.includes(item.id) ? 'visible' : '',
+                    explorerHighlight === item.id ? 'highlighted' : '',
+                    explorerSearch === item.id ? 'searching' : '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  <span className="explorer-icon">{item.icon}</span>
+                  <span className="explorer-name">{item.name}</span>
+                  {item.badge && (
+                    <span className={`explorer-badge ${explorerBadge === item.id ? 'visible' : ''}`}>
+                      {item.badge}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 3 — Code Block */}
+        {phase === 3 && (
+          <div className="auth-code-block">
+            <div className="code-bar">
+              <div className="code-dot code-dot-red" />
+              <div className="code-dot code-dot-amber" />
+              <div className="code-dot code-dot-green" />
+            </div>
+            <div className="code-line"><span className="code-ln">1</span><span className="c-purple">from</span><span className="c-white"> rag </span><span className="c-purple">import</span><span className="c-blue"> CodebaseAssistant</span></div>
+            <div className="code-line"><span className="code-ln">2</span><span className="c-muted">&nbsp;</span></div>
+            <div className="code-line"><span className="code-ln">3</span><span className="c-blue">assistant</span><span className="c-white"> = </span><span className="c-green">CodebaseAssistant</span><span className="c-white">(</span></div>
+            <div className="code-line"><span className="code-ln">4</span><span className="c-white">&nbsp;&nbsp;repo</span><span className="c-white">=</span><span className="c-amber">"your-project"</span><span className="c-white">,</span></div>
+            <div className="code-line"><span className="code-ln">5</span><span className="c-white">&nbsp;&nbsp;search</span><span className="c-white">=</span><span className="c-amber">"hybrid"</span><span className="c-white">,</span></div>
+            <div className="code-line"><span className="code-ln">6</span><span className="c-white">)</span></div>
+            <div className="code-line"><span className="code-ln">7</span><span className="c-muted">&nbsp;</span></div>
+            <div className="code-line"><span className="code-ln">8</span><span className="c-blue">result</span><span className="c-white"> = assistant.</span><span className="c-green">ask</span><span className="c-white">(</span></div>
+            <div className="code-line"><span className="code-ln">9</span><span className="c-white">&nbsp;&nbsp;</span><span className="c-amber">"How does auth work?"</span></div>
+            <div className="code-line"><span className="code-ln">10</span><span className="c-white">)</span></div>
+            <div className="code-line"><span className="code-ln">11</span><span className="c-muted">&nbsp;</span></div>
+            <div className="code-line"><span className="code-ln">12</span><span className="c-purple">print</span><span className="c-white">(result.</span><span className="c-pink">answer</span><span className="c-white">, result.</span><span className="c-pink">sources</span><span className="c-white">)</span><span className="code-cursor" /></div>
+          </div>
+        )}
+
+      </div>
+
+      {/* Progress bars */}
+      <div className="phase-progress-track">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="phase-progress-bar" onClick={() => { setVisible(false); setTimeout(() => setPhase(i), 400) }}>
+            <div
+              className={`phase-progress-fill ${i < phase ? 'done' : i === phase ? 'active' : ''}`}
+              style={i === phase ? { width: `${progress}%`, transition: `width ${50}ms linear` } : {}}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
@@ -511,40 +783,7 @@ function App() {
                 </p>
               </div>
 
-              <div className="auth-code-block">
-                <div className="code-bar">
-                  <div className="code-dot code-dot-red" />
-                  <div className="code-dot code-dot-amber" />
-                  <div className="code-dot code-dot-green" />
-                </div>
-                <div className="code-line"><span className="code-ln">1</span><span className="c-purple">from</span><span className="c-white"> rag </span><span className="c-purple">import</span><span className="c-blue"> CodebaseAssistant</span></div>
-                <div className="code-line"><span className="code-ln">2</span><span className="c-muted">&nbsp;</span></div>
-                <div className="code-line"><span className="code-ln">3</span><span className="c-blue">assistant</span><span className="c-white"> = </span><span className="c-green">CodebaseAssistant</span><span className="c-white">(</span></div>
-                <div className="code-line"><span className="code-ln">4</span><span className="c-white">&nbsp;&nbsp;&nbsp;&nbsp;repo</span><span className="c-white">=</span><span className="c-amber">"your-project"</span><span className="c-white">,</span></div>
-                <div className="code-line"><span className="code-ln">5</span><span className="c-white">&nbsp;&nbsp;&nbsp;&nbsp;search</span><span className="c-white">=</span><span className="c-amber">"hybrid"</span><span className="c-white">,</span></div>
-                <div className="code-line"><span className="code-ln">6</span><span className="c-white">)</span></div>
-                <div className="code-line"><span className="code-ln">7</span><span className="c-muted">&nbsp;</span></div>
-                <div className="code-line"><span className="code-ln">8</span><span className="c-blue">result</span><span className="c-white"> = assistant.</span><span className="c-green">ask</span><span className="c-white">(</span></div>
-                <div className="code-line"><span className="code-ln">9</span><span className="c-white">&nbsp;&nbsp;&nbsp;&nbsp;</span><span className="c-amber">"How does auth work?"</span></div>
-                <div className="code-line"><span className="code-ln">10</span><span className="c-white">)</span></div>
-                <div className="code-line"><span className="code-ln">11</span><span className="c-muted">&nbsp;</span></div>
-                <div className="code-line"><span className="code-ln">12</span><span className="c-purple">print</span><span className="c-white">(result.</span><span className="c-pink">answer</span><span className="c-white">, result.</span><span className="c-pink">sources</span><span className="c-white">)</span><span className="code-cursor" /></div>
-              </div>
-
-              <div className="auth-left-stats">
-                <div className="auth-stat">
-                  <span className="auth-stat-value">6</span>
-                  <span className="auth-stat-label">Languages</span>
-                </div>
-                <div className="auth-stat">
-                  <span className="auth-stat-value">200+</span>
-                  <span className="auth-stat-label">Files supported</span>
-                </div>
-                <div className="auth-stat">
-                  <span className="auth-stat-value">SSE</span>
-                  <span className="auth-stat-label">Streaming</span>
-                </div>
-              </div>
+              <AuthStoryPanel />
             </div>
 
             <div className="auth-left-bottom">
