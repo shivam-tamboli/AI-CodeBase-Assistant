@@ -920,17 +920,10 @@ header h1 {
 .auth-screen {
   min-height: 100vh;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  flex-direction: row;
+  align-items: stretch;
   background: var(--bg-base);
-  background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.1) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.07) 0%, transparent 45%),
-    linear-gradient(rgba(99,102,241,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(99,102,241,0.025) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
-  padding: 1.5rem;
+  padding: 0;
 }
 
 .auth-logo {
@@ -1097,4 +1090,244 @@ header h1 {
   border-bottom: 1px solid rgba(99,102,241,0.2);
   font-size: 0.75rem;
   color: var(--accent);
+}
+
+/* ── Auth Split Layout ─────────────────────────────────────────────────────── */
+.auth-left {
+  flex: 1;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2.5rem;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+}
+
+.auth-left-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(ellipse at 30% 20%, rgba(99,102,241,0.12) 0%, transparent 55%),
+    radial-gradient(ellipse at 70% 80%, rgba(139,92,246,0.08) 0%, transparent 50%),
+    linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+  pointer-events: none;
+}
+
+.auth-left-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.auth-left-logo {
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  box-shadow: 0 0 16px rgba(99,102,241,0.5);
+}
+
+.auth-left-brand {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.auth-left-middle {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.auth-left-heading {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+}
+
+.auth-left-heading span {
+  background: linear-gradient(135deg, #6366f1, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.auth-left-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  max-width: 340px;
+}
+
+/* ── Animated Code Block ───────────────────────────────────────────────────── */
+.auth-code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.75rem;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-code-block::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4);
+}
+
+.code-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+.code-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.code-dot-red    { background: #ef4444; }
+.code-dot-amber  { background: #f59e0b; }
+.code-dot-green  { background: #10b981; }
+
+.code-line { display: flex; align-items: center; gap: 0.5rem; }
+
+.code-ln {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  width: 16px;
+  text-align: right;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.c-purple  { color: #a78bfa; }
+.c-blue    { color: #60a5fa; }
+.c-green   { color: #34d399; }
+.c-amber   { color: #fbbf24; }
+.c-pink    { color: #f472b6; }
+.c-muted   { color: #4b5563; }
+.c-white   { color: #f1f5f9; }
+
+.code-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: var(--accent);
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: blink 1.1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.auth-left-stats {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.auth-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.auth-stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.auth-stat-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.auth-left-bottom {
+  position: relative;
+  z-index: 1;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ── Auth Right ────────────────────────────────────────────────────────────── */
+.auth-right {
+  width: 420px;
+  min-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem;
+  background: var(--bg-base);
+}
+
+.auth-right-inner {
+  width: 100%;
+  max-width: 340px;
+}
+
+.auth-right-header {
+  margin-bottom: 2rem;
+}
+
+.auth-right-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  margin-bottom: 0.3rem;
+}
+
+.auth-right-sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* Keep existing .auth-field, .auth-input, .auth-submit, .auth-toggle, .auth-card styles — they still apply */
+/* Just override .auth-card to be borderless inside the right panel */
+.auth-right .auth-card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  width: 100%;
+  max-width: 340px;
+}
+
+.auth-right .auth-card h2 {
+  display: none;
 }

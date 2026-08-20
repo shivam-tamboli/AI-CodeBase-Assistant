@@ -490,49 +490,124 @@ function App() {
     return (
       <>
         <div className="auth-screen">
-          <div className="auth-logo">⚡</div>
-          <h1 className="auth-title">AI Codebase Assistant</h1>
-          <p className="auth-subtitle">Ask questions about your code in plain English</p>
-          <div className="auth-card">
-            <h2>{isRegistering ? 'Create account' : 'Sign in'}</h2>
-            <div className="auth-field">
-              <label htmlFor="auth-user">Username</label>
-              <input
-                id="auth-user"
-                className="auth-input"
-                type="text"
-                placeholder="your-username"
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
-                autoComplete="username"
-              />
+          {/* ── LEFT PANEL ── */}
+          <div className="auth-left">
+            <div className="auth-left-bg" />
+
+            <div className="auth-left-top">
+              <div className="auth-left-logo">⚡</div>
+              <span className="auth-left-brand">AI Codebase Assistant</span>
             </div>
-            <div className="auth-field">
-              <label htmlFor="auth-pass">Password</label>
-              <input
-                id="auth-pass"
-                className="auth-input"
-                type="password"
-                placeholder="••••••••"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
-                autoComplete={isRegistering ? 'new-password' : 'current-password'}
-              />
+
+            <div className="auth-left-middle">
+              <div>
+                <h2 className="auth-left-heading">
+                  Ask anything about<br />
+                  <span>any codebase.</span>
+                </h2>
+                <p className="auth-left-desc">
+                  Upload a repository, ask questions in plain English,
+                  and get cited answers with exact file and line references.
+                </p>
+              </div>
+
+              <div className="auth-code-block">
+                <div className="code-bar">
+                  <div className="code-dot code-dot-red" />
+                  <div className="code-dot code-dot-amber" />
+                  <div className="code-dot code-dot-green" />
+                </div>
+                <div className="code-line"><span className="code-ln">1</span><span className="c-purple">from</span><span className="c-white"> rag </span><span className="c-purple">import</span><span className="c-blue"> CodebaseAssistant</span></div>
+                <div className="code-line"><span className="code-ln">2</span><span className="c-muted">&nbsp;</span></div>
+                <div className="code-line"><span className="code-ln">3</span><span className="c-blue">assistant</span><span className="c-white"> = </span><span className="c-green">CodebaseAssistant</span><span className="c-white">(</span></div>
+                <div className="code-line"><span className="code-ln">4</span><span className="c-white">&nbsp;&nbsp;&nbsp;&nbsp;repo</span><span className="c-white">=</span><span className="c-amber">"your-project"</span><span className="c-white">,</span></div>
+                <div className="code-line"><span className="code-ln">5</span><span className="c-white">&nbsp;&nbsp;&nbsp;&nbsp;search</span><span className="c-white">=</span><span className="c-amber">"hybrid"</span><span className="c-white">,</span></div>
+                <div className="code-line"><span className="code-ln">6</span><span className="c-white">)</span></div>
+                <div className="code-line"><span className="code-ln">7</span><span className="c-muted">&nbsp;</span></div>
+                <div className="code-line"><span className="code-ln">8</span><span className="c-blue">result</span><span className="c-white"> = assistant.</span><span className="c-green">ask</span><span className="c-white">(</span></div>
+                <div className="code-line"><span className="code-ln">9</span><span className="c-white">&nbsp;&nbsp;&nbsp;&nbsp;</span><span className="c-amber">"How does auth work?"</span></div>
+                <div className="code-line"><span className="code-ln">10</span><span className="c-white">)</span></div>
+                <div className="code-line"><span className="code-ln">11</span><span className="c-muted">&nbsp;</span></div>
+                <div className="code-line"><span className="code-ln">12</span><span className="c-purple">print</span><span className="c-white">(result.</span><span className="c-pink">answer</span><span className="c-white">, result.</span><span className="c-pink">sources</span><span className="c-white">)</span><span className="code-cursor" /></div>
+              </div>
+
+              <div className="auth-left-stats">
+                <div className="auth-stat">
+                  <span className="auth-stat-value">6</span>
+                  <span className="auth-stat-label">Languages</span>
+                </div>
+                <div className="auth-stat">
+                  <span className="auth-stat-value">200+</span>
+                  <span className="auth-stat-label">Files supported</span>
+                </div>
+                <div className="auth-stat">
+                  <span className="auth-stat-value">SSE</span>
+                  <span className="auth-stat-label">Streaming</span>
+                </div>
+              </div>
             </div>
-            <button
-              className="auth-submit"
-              onClick={isRegistering ? register : login}
-              disabled={!authUsername || !authPassword}
-            >
-              {isRegistering ? 'Create account' : 'Sign in'}
-            </button>
-            <div className="auth-toggle">
-              {isRegistering ? 'Already have an account?' : "Don't have an account?"}
-              <button onClick={() => setIsRegistering(!isRegistering)}>
-                {isRegistering ? 'Sign in' : 'Register'}
-              </button>
+
+            <div className="auth-left-bottom">
+              Built with FastAPI · RAG · MongoDB Atlas · OpenAI
+            </div>
+          </div>
+
+          {/* ── RIGHT PANEL ── */}
+          <div className="auth-right">
+            <div className="auth-right-inner">
+              <div className="auth-right-header">
+                <h1 className="auth-right-title">
+                  {isRegistering ? 'Create account' : 'Welcome back'}
+                </h1>
+                <p className="auth-right-sub">
+                  {isRegistering
+                    ? 'Start exploring your codebase in seconds.'
+                    : 'Sign in to continue to your assistant.'}
+                </p>
+              </div>
+
+              <div className="auth-card">
+                <h2>{isRegistering ? 'Create account' : 'Sign in'}</h2>
+                <div className="auth-field">
+                  <label htmlFor="auth-user">Username</label>
+                  <input
+                    id="auth-user"
+                    className="auth-input"
+                    type="text"
+                    placeholder="your-username"
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="auth-field">
+                  <label htmlFor="auth-pass">Password</label>
+                  <input
+                    id="auth-pass"
+                    className="auth-input"
+                    type="password"
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
+                    autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                  />
+                </div>
+                <button
+                  className="auth-submit"
+                  onClick={isRegistering ? register : login}
+                  disabled={!authUsername || !authPassword}
+                >
+                  {isRegistering ? 'Create account' : 'Sign in'}
+                </button>
+                <div className="auth-toggle">
+                  {isRegistering ? 'Already have an account?' : "Don't have an account?"}
+                  <button onClick={() => setIsRegistering(!isRegistering)}>
+                    {isRegistering ? 'Sign in' : 'Register'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
