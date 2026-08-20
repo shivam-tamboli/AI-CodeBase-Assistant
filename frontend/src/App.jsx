@@ -767,7 +767,12 @@ function App() {
             <div className="auth-left-bg" />
 
             <div className="auth-left-top">
-              <div className="auth-left-logo">⚡</div>
+              <div className="auth-left-logo">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+              </div>
               <span className="auth-left-brand">AI Codebase Assistant</span>
             </div>
 
@@ -875,7 +880,12 @@ function App() {
 
       <header>
         <div className="header-brand">
-          <div className="header-logo">⚡</div>
+          <div className="header-logo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </div>
           <h1>AI Codebase Assistant</h1>
         </div>
         <div className="header-right">
@@ -897,9 +907,16 @@ function App() {
               Upload Repository
             </div>
             <div className="input-group">
-              <label className="file-label">
-                <span>📁</span>
-                <span>{uploadFile ? uploadFile.name : 'Choose ZIP file'}</span>
+              <label className={`upload-zone ${uploadFile ? 'has-file' : ''}`}>
+                <svg className="upload-zone-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span className="upload-zone-text">
+                  {uploadFile ? uploadFile.name : 'Drop ZIP here or click to browse'}
+                </span>
+                {!uploadFile && <span className="upload-zone-sub">Supports .zip files</span>}
                 <input
                   ref={uploadInputRef}
                   type="file"
@@ -988,9 +1005,15 @@ function App() {
                 Re-index Repository
               </div>
               <div className="input-group">
-                <label className="file-label">
-                  <span>📁</span>
-                  <span>{reindexFile ? reindexFile.name : 'Choose updated ZIP'}</span>
+                <label className={`upload-zone ${reindexFile ? 'has-file' : ''}`}>
+                  <svg className="upload-zone-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                  <span className="upload-zone-text">
+                    {reindexFile ? reindexFile.name : 'Drop updated ZIP here'}
+                  </span>
+                  {!reindexFile && <span className="upload-zone-sub">Replaces current index</span>}
                   <input
                     ref={reindexInputRef}
                     type="file"
@@ -1060,25 +1083,27 @@ function App() {
         <section className="chat-section">
           {!selectedRepo ? (
             <div className="empty-state">
-              <div className="empty-state-icon">⚡</div>
+              <div className="empty-state-icon">
+                <span className="empty-state-icon-svg">&lt;/&gt;</span>
+              </div>
               <h3>AI Codebase Assistant</h3>
-              <p>Upload or import a repository, then ask questions about it in plain English.</p>
+              <p>Upload or import a repository, then interrogate it in plain English.</p>
               <div className="empty-state-features">
                 <div className="feature-row">
-                  <span className="feature-row-icon">🔍</span>
-                  Hybrid semantic + BM25 search
+                  <span className="feature-row-icon">⟳</span>
+                  Hybrid BM25 + semantic search with RRF fusion
                 </div>
                 <div className="feature-row">
-                  <span className="feature-row-icon">📎</span>
-                  Cited answers with file & line numbers
+                  <span className="feature-row-icon">◎</span>
+                  Cohere reranking across 6 languages
                 </div>
                 <div className="feature-row">
-                  <span className="feature-row-icon">💬</span>
-                  Persistent multi-session conversations
+                  <span className="feature-row-icon">▸</span>
+                  Cited answers — exact file path + line numbers
                 </div>
                 <div className="feature-row">
-                  <span className="feature-row-icon">⚡</span>
-                  Streaming responses via SSE
+                  <span className="feature-row-icon">≋</span>
+                  Streaming SSE · persistent sessions · JWT auth
                 </div>
               </div>
             </div>
