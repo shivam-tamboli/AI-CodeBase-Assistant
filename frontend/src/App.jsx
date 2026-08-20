@@ -853,7 +853,7 @@ function App() {
 
             <div className="auth-left-top">
               <div className="auth-left-logo">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#00f5ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="16 18 22 12 16 6"/>
                   <polyline points="8 6 2 12 8 18"/>
                 </svg>
@@ -1175,19 +1175,43 @@ function App() {
               <p>Upload or import a repository, then interrogate it in plain English.</p>
               <div className="empty-state-features">
                 <div className="feature-row">
-                  <span className="feature-row-icon">⟳</span>
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="11" r="8"/>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                  </span>
                   Hybrid BM25 + semantic search with RRF fusion
                 </div>
                 <div className="feature-row">
-                  <span className="feature-row-icon">◎</span>
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="3" y1="6" x2="21" y2="6"/>
+                      <line x1="3" y1="12" x2="15" y2="12"/>
+                      <line x1="3" y1="18" x2="9" y2="18"/>
+                      <polyline points="17 15 21 12 17 9"/>
+                    </svg>
+                  </span>
                   Cohere reranking across 6 languages
                 </div>
                 <div className="feature-row">
-                  <span className="feature-row-icon">▸</span>
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="16" y1="13" x2="8" y2="13"/>
+                      <line x1="16" y1="17" x2="8" y2="17"/>
+                      <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                  </span>
                   Cited answers — exact file path + line numbers
                 </div>
                 <div className="feature-row">
-                  <span className="feature-row-icon">≋</span>
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                  </span>
                   Streaming SSE · persistent sessions · JWT auth
                 </div>
               </div>

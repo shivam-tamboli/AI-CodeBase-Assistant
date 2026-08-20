@@ -481,10 +481,10 @@ header h1 {
 }
 
 .empty-state-icon {
-  width: 80px;
-  height: 80px;
-  background: transparent;
-  border: 1px solid rgba(0,245,255,0.3);
+  width: 84px;
+  height: 84px;
+  background: rgba(0,245,255,0.03);
+  border: 1px solid rgba(0,245,255,0.5);
   border-radius: 16px;
   display: flex;
   align-items: center;
@@ -496,8 +496,19 @@ header h1 {
 }
 
 @keyframes iconPulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(0,245,255,0.2), 0 0 40px rgba(0,245,255,0.05); }
-  50%       { box-shadow: 0 0 40px rgba(0,245,255,0.4), 0 0 80px rgba(0,245,255,0.1); transform: translateY(-3px); }
+  0%, 100% {
+    box-shadow:
+      0 0 20px rgba(0,245,255,0.3),
+      0 0 40px rgba(0,245,255,0.1),
+      inset 0 0 20px rgba(0,245,255,0.05);
+  }
+  50% {
+    box-shadow:
+      0 0 40px rgba(0,245,255,0.5),
+      0 0 80px rgba(0,245,255,0.15),
+      inset 0 0 30px rgba(0,245,255,0.08);
+    transform: translateY(-3px);
+  }
 }
 
 .empty-state h3 {
@@ -536,7 +547,13 @@ header h1 {
   text-align: left;
 }
 
-.feature-row-icon { font-size: 0.9rem; flex-shrink: 0; }
+.feature-row-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
 
 .empty-state-hints {
   display: flex;
@@ -1149,13 +1166,13 @@ header h1 {
   width: 30px;
   height: 30px;
   background: transparent;
-  border: 1px solid var(--accent);
+  border: 1px solid rgba(0,245,255,0.7);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 15px;
-  box-shadow: 0 0 16px rgba(0,245,255,0.4);
+  box-shadow: 0 0 16px rgba(0,245,255,0.4), inset 0 0 8px rgba(0,245,255,0.05);
 }
 
 .auth-left-brand {
@@ -1182,7 +1199,7 @@ header h1 {
 }
 
 .auth-left-heading span {
-  background: linear-gradient(135deg, #00f5ff, #bf5fff);
+  background: linear-gradient(90deg, #00f5ff, #00d4e0);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1216,7 +1233,7 @@ header h1 {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4);
+  background: linear-gradient(90deg, #00f5ff, #00d4e0, rgba(0,245,255,0.3));
 }
 
 .code-bar {
@@ -1284,8 +1301,9 @@ header h1 {
 .auth-stat-value {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--accent);
   letter-spacing: -0.02em;
+  text-shadow: 0 0 12px rgba(0,245,255,0.4);
 }
 
 .auth-stat-label {
@@ -1348,6 +1366,11 @@ header h1 {
   box-shadow: none;
   width: 100%;
   max-width: 340px;
+}
+
+.auth-input:focus {
+  border-color: rgba(0,245,255,0.5);
+  box-shadow: 0 0 0 3px rgba(0,245,255,0.08);
 }
 
 .auth-right .auth-card h2 {
@@ -1427,7 +1450,7 @@ header h1 {
 .phase-progress-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #00f5ff, #bf5fff);
+  background: rgba(0,245,255,0.35);
   border-radius: 2px;
   transition: width linear;
 }
@@ -1438,7 +1461,8 @@ header h1 {
 }
 
 .phase-progress-fill.active {
-  background: linear-gradient(90deg, #00f5ff, #bf5fff);
+  background: #00f5ff;
+  box-shadow: 0 0 8px rgba(0,245,255,0.6);
 }
 
 /* ── PHASE 1 — RAG Pipeline ────────────────────────────────────────────────── */
@@ -1536,7 +1560,7 @@ header h1 {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4);
+  background: linear-gradient(90deg, #00f5ff, #00d4e0, rgba(0,245,255,0.3));
 }
 
 .sim-bar {
@@ -1824,12 +1848,13 @@ header h1 {
 
 /* ── Empty state dramatic ──────────────────────────────────────────────────── */
 .empty-state-icon-svg {
-  font-size: 2rem;
+  font-size: 2.2rem;
   color: var(--accent);
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   letter-spacing: -0.05em;
   line-height: 1;
+  text-shadow: 0 0 20px rgba(0,245,255,0.8), 0 0 40px rgba(0,245,255,0.3);
 }
 
 .empty-state h3 {
@@ -2136,3 +2161,48 @@ header h1 {
 }
 
 .pipeline-score-counter.lit { opacity: 1; }
+
+/* ── Auth left background grid — pure dark ─────────────────────────────────── */
+.auth-left-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(ellipse at 30% 20%, rgba(0,245,255,0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 70% 80%, rgba(0,245,255,0.03) 0%, transparent 50%),
+    linear-gradient(rgba(0,245,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,245,255,0.02) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+  pointer-events: none;
+}
+
+/* ── Phase label — pure cyan ────────────────────────────────────────────────── */
+.phase-label {
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(0,245,255,0.5);
+}
+
+/* ── Auth left brand name ────────────────────────────────────────────────────── */
+.auth-left-brand {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* ── Sim bubble user — pure cyan ────────────────────────────────────────────── */
+.sim-bubble-user {
+  background: rgba(0,245,255,0.06);
+  border: 1px solid rgba(0,245,255,0.2);
+  color: var(--accent);
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px 6px 2px 6px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  min-height: 18px;
+}
+
+/* ── Sim avatar user — cyan ─────────────────────────────────────────────────── */
+.sim-avatar-user {
+  color: var(--accent);
+  border-color: rgba(0,245,255,0.5);
+}
