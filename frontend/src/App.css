@@ -166,7 +166,7 @@ header h1 {
 
 .sidebar-section {
   padding: 0.875rem 0.75rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(0,245,255,0.1);
 }
 
 .sidebar-section:last-child { border-bottom: none; flex: 1; }
@@ -271,6 +271,12 @@ header h1 {
   box-shadow: 0 0 28px rgba(0,245,255,0.35), 0 0 8px rgba(0,245,255,0.2);
 }
 
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.97) translateY(0);
+  box-shadow: 0 0 12px rgba(0,245,255,0.2);
+  transition: all 0.08s ease;
+}
+
 .btn-ghost {
   background: var(--bg-elevated);
   color: var(--text-secondary);
@@ -281,6 +287,11 @@ header h1 {
   background: var(--bg-hover);
   color: var(--text-primary);
   border-color: var(--border-light);
+}
+
+.btn-ghost:active:not(:disabled) {
+  transform: scale(0.97);
+  transition: all 0.08s ease;
 }
 
 .btn-new-chat {
@@ -538,13 +549,28 @@ header h1 {
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.875rem;
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(0,245,255,0.07);
   border-radius: var(--radius);
   font-size: 0.78rem;
   color: var(--text-secondary);
   text-align: left;
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.feature-row:hover {
+  border-color: rgba(0,245,255,0.3);
+  background: rgba(0,245,255,0.04);
+  box-shadow: 0 0 16px rgba(0,245,255,0.08);
+  color: var(--text-primary);
+  transform: translateX(4px);
+}
+
+.feature-row:hover .feature-row-icon {
+  color: var(--accent);
+  filter: drop-shadow(0 0 4px rgba(0,245,255,0.6));
 }
 
 .feature-row-icon {
@@ -936,6 +962,11 @@ header h1 {
   box-shadow: 0 0 24px rgba(0,245,255,0.45), 0 0 8px rgba(0,245,255,0.2);
 }
 
+.send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  transition: all 0.08s ease;
+}
+
 .send-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -1055,6 +1086,7 @@ header h1 {
     inset 0 0 16px rgba(0,245,255,0.03);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  animation: btnBreathe 3s ease-in-out infinite;
 }
 
 .auth-submit:hover:not(:disabled) {
@@ -1065,6 +1097,7 @@ header h1 {
     0 0 64px rgba(0,245,255,0.1),
     inset 0 0 20px rgba(0,245,255,0.05);
   border-color: var(--accent);
+  animation: none;
 }
 
 .auth-submit:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -1148,6 +1181,7 @@ header h1 {
   position: relative;
   overflow: hidden;
   min-height: 100vh;
+  animation: slideInLeft 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .auth-left-bg {
@@ -1200,19 +1234,25 @@ header h1 {
 }
 
 .auth-left-heading {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.03em;
+  font-size: 2.2rem;
+  font-weight: 300;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: -0.02em;
   line-height: 1.2;
   margin-bottom: 0.5rem;
 }
 
 .auth-left-heading span {
+  display: block;
+  font-weight: 800;
+  font-size: 2.6rem;
+  letter-spacing: -0.04em;
   background: linear-gradient(90deg, #00f5ff, #00d4e0);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  text-shadow: none;
+  line-height: 1.1;
 }
 
 .auth-left-desc {
@@ -1346,11 +1386,31 @@ header h1 {
   padding: 2.5rem;
   background: #000000;
   border-left: 1px solid rgba(0,245,255,0.08);
+  animation: slideInRight 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
 }
 
 .auth-right-inner {
   width: 100%;
   max-width: 340px;
+  position: relative;
+}
+
+.auth-right-inner::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(ellipse at center, rgba(0,245,255,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-right-inner > * {
+  position: relative;
+  z-index: 1;
 }
 
 .auth-right-header {
@@ -1453,12 +1513,17 @@ header h1 {
 }
 
 .phase-progress-bar {
-  height: 2px;
+  height: 3px;
   flex: 1;
   background: rgba(255,255,255,0.06);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
   cursor: pointer;
+  transition: height 0.2s ease;
+}
+
+.phase-progress-bar:hover {
+  height: 4px;
 }
 
 .phase-progress-fill {
@@ -1476,7 +1541,7 @@ header h1 {
 
 .phase-progress-fill.active {
   background: #00f5ff;
-  box-shadow: 0 0 8px rgba(0,245,255,0.6);
+  box-shadow: 0 0 10px rgba(0,245,255,0.8), 0 0 20px rgba(0,245,255,0.3);
 }
 
 /* ── PHASE 1 — RAG Pipeline ────────────────────────────────────────────────── */
@@ -1885,17 +1950,6 @@ header h1 {
   line-height: 1.7;
 }
 
-.feature-row {
-  border-color: rgba(0,245,255,0.07);
-  transition: all 0.15s ease;
-}
-
-.feature-row:hover {
-  border-color: rgba(0,245,255,0.25);
-  background: var(--accent-subtle);
-  box-shadow: 0 0 12px rgba(0,245,255,0.06);
-  color: var(--text-primary);
-}
 
 /* ── Btn new-chat neon ─────────────────────────────────────────────────────── */
 .btn-new-chat {
@@ -2223,4 +2277,87 @@ header h1 {
 .sim-avatar-user {
   color: var(--accent);
   border-color: rgba(0,245,255,0.5);
+}
+
+@keyframes btnBreathe {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(0,245,255,0.2),
+      inset 0 0 12px rgba(0,245,255,0.03);
+  }
+  50% {
+    box-shadow:
+      0 0 28px rgba(0,245,255,0.4),
+      0 0 60px rgba(0,245,255,0.08),
+      inset 0 0 20px rgba(0,245,255,0.06);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.auth-left-bottom {
+  position: relative;
+  z-index: 1;
+  font-size: 0.7rem;
+  color: rgba(0,245,255,0.25);
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auth-footer-sep {
+  color: rgba(0,245,255,0.15);
+  font-size: 0.65rem;
+}
+
+.explorer-indexing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: statusPulse 2s ease-in-out infinite;
+  margin-right: 0.375rem;
+  flex-shrink: 0;
+}
+
+.phase-counter {
+  margin-left: auto;
+  font-size: 0.6rem;
+  color: rgba(0,245,255,0.3);
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.05em;
+}
+
+.pipeline-score-label {
+  font-size: 0.55rem;
+  color: rgba(0,255,159,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-family: 'JetBrains Mono', monospace;
+  display: block;
+  margin-top: 0.15rem;
 }

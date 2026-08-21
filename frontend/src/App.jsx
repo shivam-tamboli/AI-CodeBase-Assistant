@@ -135,6 +135,7 @@ function AuthStoryPanel() {
       <div className={`phase-label ${visible ? 'visible' : ''}`}>
         <div className="phase-dot" />
         {phaseLabels[phase]}
+        <span className="phase-counter">0{phase + 1} / 04</span>
       </div>
 
       <div className={`phase-content ${visible ? 'visible' : ''}`}>
@@ -285,16 +286,24 @@ function AuthStoryPanel() {
                 style={{
                   alignSelf: 'center',
                   marginBottom: '1.4rem',
+                  opacity: pipelineStep >= 6 ? 1 : 0,
+                  transition: 'opacity 0.3s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.1rem',
+                }}
+              >
+                <span style={{
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: '0.65rem',
                   color: 'var(--green)',
-                  opacity: pipelineStep >= 6 ? 1 : 0,
-                  transition: 'opacity 0.3s ease',
                   textShadow: '0 0 8px rgba(0,255,159,0.5)',
                   whiteSpace: 'nowrap',
-                }}
-              >
-                score: 0.94
+                }}>
+                  score: 0.94
+                </span>
+                <span className="pipeline-score-label">relevance</span>
               </div>
             </div>
 
@@ -338,7 +347,10 @@ function AuthStoryPanel() {
               <div className="code-dot code-dot-red" />
               <div className="code-dot code-dot-amber" />
               <div className="code-dot code-dot-green" />
-              <span className="explorer-title-text">your-project · indexing</span>
+              <span className="explorer-title-text">
+                <span className="explorer-indexing-dot" />
+                your-project · indexing
+              </span>
             </div>
             <div className="explorer-body">
               {EXPLORER_ITEMS.map(item => (
@@ -905,7 +917,7 @@ function App() {
             <div className="auth-left-middle">
               <div>
                 <h2 className="auth-left-heading">
-                  Ask anything about<br />
+                  Ask anything about
                   <span>any codebase.</span>
                 </h2>
                 <p className="auth-left-desc">
@@ -933,7 +945,15 @@ function App() {
             </div>
 
             <div className="auth-left-bottom">
-              Built with FastAPI · RAG · MongoDB Atlas · OpenAI
+              <span>FastAPI</span>
+              <span className="auth-footer-sep">|</span>
+              <span>RAG Pipeline</span>
+              <span className="auth-footer-sep">|</span>
+              <span>MongoDB Atlas</span>
+              <span className="auth-footer-sep">|</span>
+              <span>OpenAI</span>
+              <span className="auth-footer-sep">|</span>
+              <span>Cohere</span>
             </div>
           </div>
 
@@ -1373,7 +1393,7 @@ function App() {
                 <div className="input-wrapper">
                   <textarea
                     className="chat-textarea"
-                    placeholder={repoReady ? 'Ask a question about your code… (Enter to send)' : 'Waiting for indexing to complete…'}
+                    placeholder={repoReady ? 'e.g. How does the auth middleware work?' : 'Indexing in progress — almost ready…'}
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
                     onKeyDown={handleKeyDown}
