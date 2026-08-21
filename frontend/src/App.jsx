@@ -454,6 +454,7 @@ function App() {
 
   // Toast notifications
   const [toasts, setToasts] = useState([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // File input refs — needed to reset native input value so same file can be re-selected
   const uploadInputRef = useRef(null)
@@ -1041,6 +1042,25 @@ function App() {
 
       <header>
         <div className="header-brand">
+          <button
+            className="mobile-menu-btn"
+            onClick={() => setSidebarOpen(prev => !prev)}
+            title="Toggle menu"
+            aria-label="Toggle sidebar menu"
+          >
+            {sidebarOpen ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6"/>
+                <line x1="3" y1="12" x2="21" y2="12"/>
+                <line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
+            )}
+          </button>
           <div className="header-logo">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="16 18 22 12 16 6"/>
@@ -1059,7 +1079,7 @@ function App() {
       <main className="main-layout">
 
         {/* ── SIDEBAR ──────────────────────────────────────────────────── */}
-        <aside className="sidebar">
+        <aside className={`sidebar ${sidebarOpen ? 'mobile-open' : ''}`}>
 
           {/* Upload ZIP */}
           <div className="sidebar-section">

@@ -2361,3 +2361,337 @@ header h1 {
   display: block;
   margin-top: 0.15rem;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE STYLES
+   Breakpoints:
+   - 768px  : tablet and below
+   - 480px  : phone and below
+   - 375px  : small phone (iPhone SE etc)
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Tablet and below (768px) ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* AUTH SCREEN — stack vertically */
+  .auth-screen {
+    flex-direction: column;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* AUTH LEFT — shrink to compact top section */
+  .auth-left {
+    min-height: auto;
+    padding: 1.75rem 1.5rem 1.25rem;
+    flex: none;
+    animation: none;
+    border-right: none;
+    border-bottom: 1px solid rgba(0,245,255,0.08);
+  }
+
+  /* Hide the animated story panel on mobile — too complex for small screen */
+  .auth-story {
+    display: none;
+  }
+
+  /* Hide stats on mobile */
+  .auth-left-stats {
+    display: none;
+  }
+
+  /* Compact heading */
+  .auth-left-heading {
+    font-size: 1.5rem;
+    font-weight: 300;
+    margin-bottom: 0.25rem;
+  }
+
+  .auth-left-heading span {
+    font-size: 1.75rem;
+    font-weight: 800;
+  }
+
+  .auth-left-desc {
+    display: none;
+  }
+
+  /* Compact top bar */
+  .auth-left-top {
+    margin-bottom: 1rem;
+  }
+
+  /* AUTH RIGHT — take full width */
+  .auth-right {
+    width: 100%;
+    min-width: 0;
+    flex: 1;
+    padding: 1.75rem 1.5rem;
+    animation: none;
+    border-left: none;
+  }
+
+  .auth-right-inner {
+    max-width: 100%;
+  }
+
+  /* DASHBOARD — main layout stack */
+  .main-layout {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* SIDEBAR — hide by default on mobile, shown via toggle */
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    max-height: 0;
+    overflow: hidden;
+    border-right: none;
+    border-bottom: 1px solid rgba(0,245,255,0.1);
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .sidebar.mobile-open {
+    max-height: 100vh;
+    overflow-y: auto;
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+  }
+
+  /* CHAT SECTION — full height */
+  .chat-section {
+    height: calc(100vh - 48px);
+    flex: 1;
+  }
+
+  /* HEADER — add hamburger menu button */
+  .mobile-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid rgba(0,245,255,0.2);
+    border-radius: 6px;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 0.3rem 0.5rem;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+
+  .mobile-menu-btn:hover {
+    background: rgba(0,245,255,0.06);
+    border-color: rgba(0,245,255,0.5);
+    box-shadow: 0 0 12px rgba(0,245,255,0.2);
+  }
+
+  /* CHAT MESSAGES — reduce padding */
+  .chat-messages {
+    padding: 1rem 0.875rem;
+  }
+
+  .messages-inner {
+    max-width: 100%;
+  }
+
+  /* CHAT INPUT — reduce padding */
+  .chat-input-area {
+    padding: 0.625rem 0.75rem 0.75rem;
+  }
+
+  .chat-input-inner {
+    max-width: 100%;
+  }
+
+  /* MESSAGE — full width on mobile */
+  .message-content {
+    max-width: 95%;
+  }
+
+  /* SESSION BADGE — compact */
+  .session-badge {
+    padding: 0.35rem 0.875rem;
+    font-size: 0.68rem;
+  }
+
+  /* EMPTY STATE — tighter */
+  .empty-state {
+    padding: 1.5rem 1rem;
+    gap: 0.75rem;
+  }
+
+  .empty-state h3 {
+    font-size: 0.95rem;
+  }
+
+  .empty-state-features {
+    max-width: 100%;
+  }
+
+  /* HINT CHIPS — full width */
+  .empty-state-hints {
+    max-width: 100%;
+  }
+
+  /* SOURCES — scroll horizontally */
+  .sources li {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  /* INDEXING BANNER — compact */
+  .indexing-banner {
+    padding: 0.4rem 0.875rem;
+    font-size: 0.72rem;
+  }
+
+}
+
+/* ── Phone and below (480px) ───────────────────────────────────────────────── */
+@media (max-width: 480px) {
+
+  /* AUTH LEFT — even more compact */
+  .auth-left {
+    padding: 1.25rem 1.25rem 1rem;
+  }
+
+  .auth-left-heading {
+    font-size: 1.35rem;
+  }
+
+  .auth-left-heading span {
+    font-size: 1.6rem;
+  }
+
+  /* AUTH RIGHT */
+  .auth-right {
+    padding: 1.25rem;
+  }
+
+  .auth-right-title {
+    font-size: 1.1rem;
+  }
+
+  /* HEADER */
+  header {
+    padding: 0 0.875rem;
+  }
+
+  header h1 {
+    font-size: 0.78rem;
+  }
+
+  /* CHAT MESSAGES */
+  .chat-messages {
+    padding: 0.875rem 0.75rem;
+    gap: 1.25rem;
+  }
+
+  /* MESSAGE CONTENT */
+  .message-content {
+    padding: 0.65rem 0.8rem;
+    font-size: 0.82rem;
+  }
+
+  /* CHAT INPUT */
+  .input-wrapper {
+    padding: 0.5rem 0.625rem;
+  }
+
+  .chat-textarea {
+    font-size: 0.82rem;
+  }
+
+  /* PIPELINE on mobile — hide (already handled by auth-story: none) */
+
+  /* EMPTY STATE */
+  .empty-state-icon {
+    width: 64px;
+    height: 64px;
+  }
+
+  .empty-state-icon-svg {
+    font-size: 1.75rem;
+  }
+
+  /* FEATURE ROWS — compact */
+  .feature-row {
+    font-size: 0.72rem;
+    padding: 0.4rem 0.625rem;
+  }
+
+  /* TOAST */
+  .toast-container {
+    bottom: 0.75rem;
+    right: 0.75rem;
+    left: 0.75rem;
+  }
+
+  .toast {
+    max-width: 100%;
+  }
+
+  /* SOURCES */
+  .sources code {
+    font-size: 0.65rem;
+  }
+
+  .score {
+    font-size: 0.62rem;
+  }
+
+}
+
+/* ── Small phone (375px — iPhone SE) ──────────────────────────────────────── */
+@media (max-width: 375px) {
+
+  .auth-left-heading {
+    font-size: 1.2rem;
+  }
+
+  .auth-left-heading span {
+    font-size: 1.4rem;
+  }
+
+  .auth-right {
+    padding: 1rem;
+  }
+
+  .auth-input {
+    font-size: 0.82rem;
+    padding: 0.55rem 0.7rem;
+  }
+
+  .auth-submit {
+    font-size: 0.72rem;
+    padding: 0.6rem;
+  }
+
+  header h1 {
+    display: none;
+  }
+
+  .chat-messages {
+    padding: 0.75rem 0.625rem;
+  }
+
+}
+
+/* ── Desktop only — hide mobile elements ───────────────────────────────────── */
+@media (min-width: 769px) {
+  .mobile-menu-btn {
+    display: none;
+  }
+
+  .sidebar {
+    max-height: none !important;
+    overflow-y: auto !important;
+    padding-top: unset;
+    padding-bottom: unset;
+  }
+}
