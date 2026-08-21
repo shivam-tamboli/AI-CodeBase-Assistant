@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
@@ -6,6 +6,404 @@ import './App.css'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 axios.defaults.withCredentials = true
+
+function AuthStoryPanel() {
+  const [phase, setPhase] = React.useState(0)
+  const [visible, setVisible] = React.useState(false)
+  const [progress, setProgress] = React.useState(0)
+  const [pipelineStep, setPipelineStep] = React.useState(0)
+  const [simQuestion, setSimQuestion] = React.useState('')
+  const [simAnswer, setSimAnswer] = React.useState('')
+  const [simAnswerVisible, setSimAnswerVisible] = React.useState(false)
+  const [simSourceVisible, setSimSourceVisible] = React.useState(false)
+  const [explorerRows, setExplorerRows] = React.useState([])
+  const [explorerHighlight, setExplorerHighlight] = React.useState(null)
+  const [explorerSearch, setExplorerSearch] = React.useState(null)
+  const [explorerBadge, setExplorerBadge] = React.useState(null)
+
+  const PHASE_DURATION = [5000, 6000, 5500, 4500]
+  const PHASES = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'API Usage']
+
+  const QUESTION_TEXT = 'How does authentication work?'
+  const ANSWER_TEXT = 'Authentication uses JWT tokens. The AuthService validates credentials, generates a signed token, and attaches it to every request via middleware.'
+
+  const EXPLORER_ITEMS = [
+    { id: 0, indent: '', icon: '📁', name: 'src/', type: 'folder' },
+    { id: 1, indent: 'indent-1', icon: '📁', name: 'auth/', type: 'folder' },
+    { id: 2, indent: 'indent-2', icon: '🐍', name: 'auth_service.py', type: 'file', badge: '41 chunks' },
+    { id: 3, indent: 'indent-2', icon: '🐍', name: 'jwt_handler.py', type: 'file', badge: '28 chunks' },
+    { id: 4, indent: 'indent-1', icon: '📁', name: 'routes/', type: 'folder' },
+    { id: 5, indent: 'indent-2', icon: '🐍', name: 'query.py', type: 'file' },
+    { id: 6, indent: 'indent-2', icon: '🐍', name: 'repository.py', type: 'file' },
+  ]
+
+  const resetPhaseState = () => {
+    setPipelineStep(0)
+    setSimQuestion('')
+    setSimAnswer('')
+    setSimAnswerVisible(false)
+    setSimSourceVisible(false)
+    setExplorerRows([])
+    setExplorerHighlight(null)
+    setExplorerSearch(null)
+    setExplorerBadge(null)
+  }
+
+  React.useEffect(() => {
+    const timers = []
+    setVisible(false)
+    setProgress(0)
+    resetPhaseState()
+
+    timers.push(setTimeout(() => setVisible(true), 100))
+
+    const duration = PHASE_DURATION[phase]
+    const startTime = Date.now()
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const pct = Math.min((elapsed / duration) * 100, 100)
+      setProgress(pct)
+    }, 50)
+    timers.push(progressInterval)
+
+    // Phase 0 — Pipeline
+    if (phase === 0) {
+      timers.push(setTimeout(() => setPipelineStep(1), 300))
+      timers.push(setTimeout(() => setPipelineStep(2), 900))
+      timers.push(setTimeout(() => setPipelineStep(3), 1500))
+      timers.push(setTimeout(() => setPipelineStep(4), 2100))
+      timers.push(setTimeout(() => setPipelineStep(5), 2900))
+      timers.push(setTimeout(() => setPipelineStep(6), 3700))
+    }
+
+    // Phase 1 — Query simulation
+    if (phase === 1) {
+      let q = ''
+      QUESTION_TEXT.split('').forEach((char, i) => {
+        timers.push(setTimeout(() => {
+          q += char
+          setSimQuestion(q)
+        }, 300 + i * 45))
+      })
+      const afterQ = 300 + QUESTION_TEXT.length * 45 + 400
+      timers.push(setTimeout(() => setSimAnswerVisible(true), afterQ))
+      let a = ''
+      ANSWER_TEXT.split('').forEach((char, i) => {
+        timers.push(setTimeout(() => {
+          a += char
+          setSimAnswer(a)
+        }, afterQ + 200 + i * 18))
+      })
+      const afterA = afterQ + 200 + ANSWER_TEXT.length * 18 + 300
+      timers.push(setTimeout(() => setSimSourceVisible(true), afterA))
+    }
+
+    // Phase 2 — Explorer
+    if (phase === 2) {
+      EXPLORER_ITEMS.forEach((item, i) => {
+        timers.push(setTimeout(() => {
+          setExplorerRows(prev => [...prev, item.id])
+        }, 300 + i * 280))
+      })
+      timers.push(setTimeout(() => setExplorerHighlight(2), 300 + EXPLORER_ITEMS.length * 280 + 200))
+      timers.push(setTimeout(() => setExplorerSearch(2), 300 + EXPLORER_ITEMS.length * 280 + 600))
+      timers.push(setTimeout(() => {
+        setExplorerSearch(3)
+        setExplorerHighlight(3)
+      }, 300 + EXPLORER_ITEMS.length * 280 + 1400))
+      timers.push(setTimeout(() => setExplorerBadge(3), 300 + EXPLORER_ITEMS.length * 280 + 1800))
+    }
+
+    // Advance to next phase
+    const nextTimer = setTimeout(() => {
+      setVisible(false)
+      setTimeout(() => {
+        setPhase(p => (p + 1) % 4)
+      }, 400)
+    }, duration - 400)
+    timers.push(nextTimer)
+
+    return () => {
+      timers.forEach(t => { if (typeof t === 'number') clearTimeout(t); else clearInterval(t) })
+    }
+  }, [phase])
+
+  const phaseLabels = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'API Usage']
+
+  return (
+    <div className="auth-story">
+      <div className={`phase-label ${visible ? 'visible' : ''}`}>
+        <div className="phase-dot" />
+        {phaseLabels[phase]}
+      </div>
+
+      <div className={`phase-content ${visible ? 'visible' : ''}`}>
+
+        {/* PHASE 0 — RAG Pipeline */}
+        {phase === 0 && (
+          <div className="pipeline-wrap">
+
+            {/* Row 1: Question → AST Parser → Split */}
+            <div className="pipeline-track">
+              <div className={`pipeline-node-v2 ${pipelineStep >= 1 ? 'lit' : ''}`}>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </div>
+                <span className="pipeline-node-label">Query</span>
+              </div>
+              <div className="pipeline-connector">
+                <div className={`pipeline-connector-fill cyan ${pipelineStep >= 2 ? 'active' : ''}`} />
+              </div>
+              <div className={`pipeline-node-v2 ${pipelineStep >= 2 ? 'lit' : ''}`}>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                  </svg>
+                </div>
+                <span className="pipeline-node-label">AST Parse</span>
+              </div>
+              <div className="pipeline-connector">
+                <div className={`pipeline-connector-fill cyan ${pipelineStep >= 3 ? 'active' : ''}`} />
+              </div>
+              <div className={`pipeline-node-v2 ${pipelineStep >= 3 ? 'lit' : ''}`}>
+                <div className="pipeline-node-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="3" width="6" height="18" rx="1"/>
+                    <rect x="9" y="3" width="6" height="18" rx="1"/>
+                    <rect x="16" y="3" width="6" height="18" rx="1"/>
+                  </svg>
+                </div>
+                <span className="pipeline-node-label">Chunk</span>
+              </div>
+            </div>
+
+            {/* Row 2: Dual search streams merging */}
+            <div className="pipeline-merge">
+              <div className="pipeline-merge-row">
+                <div className={`pipeline-merge-branch ${pipelineStep >= 4 ? 'lit' : ''}`}>
+                  <div className="pipeline-branch-node cyan">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="4" y1="6" x2="20" y2="6"/>
+                      <line x1="4" y1="12" x2="14" y2="12"/>
+                      <line x1="4" y1="18" x2="10" y2="18"/>
+                    </svg>
+                    BM25
+                  </div>
+                  <div className="pipeline-branch-line">
+                    <div className={`pipeline-branch-line-fill cyan ${pipelineStep >= 5 ? 'active' : ''}`} />
+                  </div>
+                </div>
+                <div className={`pipeline-rrf-badge ${pipelineStep >= 5 ? 'lit' : ''}`}>RRF k=60</div>
+              </div>
+              <div className="pipeline-merge-row">
+                <div className={`pipeline-merge-branch ${pipelineStep >= 4 ? 'lit' : ''}`}>
+                  <div className="pipeline-branch-node purple">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 12 Q6 6 10 12 Q14 18 18 12 Q20 9 22 12"/>
+                    </svg>
+                    Semantic
+                  </div>
+                  <div className="pipeline-branch-line">
+                    <div className={`pipeline-branch-line-fill purple ${pipelineStep >= 5 ? 'active' : ''}`} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 3: Reranker → Answer */}
+            <div className="pipeline-track" style={{ justifyContent: 'center', gap: '0' }}>
+              <div
+                style={{
+                  opacity: pipelineStep >= 5 ? 1 : 0,
+                  transform: pipelineStep >= 5 ? 'translateY(0)' : 'translateY(8px)',
+                  transition: 'all 0.4s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <div className={`pipeline-node-box ${pipelineStep >= 5 ? 'lit-purple-box' : ''}`}
+                     style={{
+                       borderColor: pipelineStep >= 5 ? 'rgba(191,95,255,0.6)' : 'rgba(0,245,255,0.15)',
+                       boxShadow: pipelineStep >= 5 ? '0 0 16px rgba(191,95,255,0.25), inset 0 0 8px rgba(191,95,255,0.05)' : 'none',
+                       background: pipelineStep >= 5 ? 'rgba(191,95,255,0.05)' : 'var(--bg-elevated)',
+                       color: pipelineStep >= 5 ? 'var(--purple)' : 'var(--text-muted)',
+                     }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <line x1="3" y1="12" x2="15" y2="12"/>
+                    <line x1="3" y1="18" x2="9" y2="18"/>
+                    <polyline points="17 15 21 12 17 9"/>
+                  </svg>
+                </div>
+                <span className="pipeline-node-label" style={{ color: pipelineStep >= 5 ? 'var(--purple)' : 'var(--text-muted)' }}>
+                  Cohere Rerank
+                </span>
+              </div>
+
+              <div className="pipeline-connector" style={{ minWidth: '60px', maxWidth: '120px' }}>
+                <div className={`pipeline-connector-fill purple ${pipelineStep >= 6 ? 'active' : ''}`} />
+              </div>
+
+              <div
+                style={{
+                  opacity: pipelineStep >= 6 ? 1 : 0,
+                  transform: pipelineStep >= 6 ? 'translateY(0)' : 'translateY(8px)',
+                  transition: 'all 0.4s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <div className="pipeline-node-box"
+                     style={{
+                       borderColor: pipelineStep >= 6 ? 'rgba(0,255,159,0.6)' : 'rgba(0,245,255,0.15)',
+                       boxShadow: pipelineStep >= 6 ? '0 0 16px rgba(0,255,159,0.25), inset 0 0 8px rgba(0,255,159,0.05)' : 'none',
+                       background: pipelineStep >= 6 ? 'rgba(0,255,159,0.05)' : 'var(--bg-elevated)',
+                       color: pipelineStep >= 6 ? 'var(--green)' : 'var(--text-muted)',
+                     }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="8 12 11 15 16 9"/>
+                  </svg>
+                </div>
+                <span className="pipeline-node-label" style={{ color: pipelineStep >= 6 ? 'var(--green)' : 'var(--text-muted)' }}>
+                  Cited Answer
+                </span>
+              </div>
+
+              <div className="pipeline-connector" style={{ minWidth: '40px', maxWidth: '80px' }}>
+                <div className={`pipeline-connector-fill green ${pipelineStep >= 6 ? 'active' : ''}`} />
+              </div>
+
+              <div
+                style={{
+                  alignSelf: 'center',
+                  marginBottom: '1.4rem',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '0.65rem',
+                  color: 'var(--green)',
+                  opacity: pipelineStep >= 6 ? 1 : 0,
+                  transition: 'opacity 0.3s ease',
+                  textShadow: '0 0 8px rgba(0,255,159,0.5)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                score: 0.94
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* PHASE 1 — Live Query */}
+        {phase === 1 && (
+          <div className="query-simulation">
+            <div className="sim-bar">
+              <div className="sim-dot sim-dot-red" />
+              <div className="sim-dot sim-dot-amber" />
+              <div className="sim-dot sim-dot-green" />
+            </div>
+            <div className="sim-question">
+              <div className="sim-avatar-user">S</div>
+              <div className="sim-bubble-user">
+                {simQuestion}
+                {simQuestion.length < QUESTION_TEXT.length && <span className="sim-cursor" />}
+              </div>
+            </div>
+            <div className={`sim-answer-wrap ${simAnswerVisible ? 'visible' : ''}`}>
+              <div className="sim-avatar-ai">AI</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1 }}>
+                <div className="sim-bubble-ai">
+                  {simAnswer}
+                  {simAnswerVisible && simAnswer.length < ANSWER_TEXT.length && <span className="sim-cursor" />}
+                </div>
+                <div className={`sim-source-pill ${simSourceVisible ? 'visible' : ''}`}>
+                  📌 auth/auth_service.py · L12–58 · score 0.94
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 2 — Codebase Explorer */}
+        {phase === 2 && (
+          <div className="explorer-wrap">
+            <div className="explorer-titlebar">
+              <div className="code-dot code-dot-red" />
+              <div className="code-dot code-dot-amber" />
+              <div className="code-dot code-dot-green" />
+              <span className="explorer-title-text">your-project · indexing</span>
+            </div>
+            <div className="explorer-body">
+              {EXPLORER_ITEMS.map(item => (
+                <div
+                  key={item.id}
+                  className={[
+                    'explorer-row',
+                    item.indent ? `explorer-${item.indent}` : '',
+                    explorerRows.includes(item.id) ? 'visible' : '',
+                    explorerHighlight === item.id ? 'highlighted' : '',
+                    explorerSearch === item.id ? 'searching' : '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  <span className="explorer-icon">{item.icon}</span>
+                  <span className="explorer-name">{item.name}</span>
+                  {item.badge && (
+                    <span className={`explorer-badge ${explorerBadge === item.id ? 'visible' : ''}`}>
+                      {item.badge}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 3 — Code Block */}
+        {phase === 3 && (
+          <div className="auth-code-block">
+            <div className="code-bar">
+              <div className="code-dot code-dot-red" />
+              <div className="code-dot code-dot-amber" />
+              <div className="code-dot code-dot-green" />
+            </div>
+            <div className="code-line"><span className="code-ln">1</span><span className="c-purple">from</span><span className="c-white"> rag </span><span className="c-purple">import</span><span className="c-blue"> CodebaseAssistant</span></div>
+            <div className="code-line"><span className="code-ln">2</span><span className="c-muted">&nbsp;</span></div>
+            <div className="code-line"><span className="code-ln">3</span><span className="c-blue">assistant</span><span className="c-white"> = </span><span className="c-green">CodebaseAssistant</span><span className="c-white">(</span></div>
+            <div className="code-line"><span className="code-ln">4</span><span className="c-white">&nbsp;&nbsp;repo</span><span className="c-white">=</span><span className="c-amber">"your-project"</span><span className="c-white">,</span></div>
+            <div className="code-line"><span className="code-ln">5</span><span className="c-white">&nbsp;&nbsp;search</span><span className="c-white">=</span><span className="c-amber">"hybrid"</span><span className="c-white">,</span></div>
+            <div className="code-line"><span className="code-ln">6</span><span className="c-white">)</span></div>
+            <div className="code-line"><span className="code-ln">7</span><span className="c-muted">&nbsp;</span></div>
+            <div className="code-line"><span className="code-ln">8</span><span className="c-blue">result</span><span className="c-white"> = assistant.</span><span className="c-green">ask</span><span className="c-white">(</span></div>
+            <div className="code-line"><span className="code-ln">9</span><span className="c-white">&nbsp;&nbsp;</span><span className="c-amber">"How does auth work?"</span></div>
+            <div className="code-line"><span className="code-ln">10</span><span className="c-white">)</span></div>
+            <div className="code-line"><span className="code-ln">11</span><span className="c-muted">&nbsp;</span></div>
+            <div className="code-line"><span className="code-ln">12</span><span className="c-purple">print</span><span className="c-white">(result.</span><span className="c-pink">answer</span><span className="c-white">, result.</span><span className="c-pink">sources</span><span className="c-white">)</span><span className="code-cursor" /></div>
+          </div>
+        )}
+
+      </div>
+
+      {/* Progress bars */}
+      <div className="phase-progress-track">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="phase-progress-bar" onClick={() => { setVisible(false); setTimeout(() => setPhase(i), 400) }}>
+            <div
+              className={`phase-progress-fill ${i < phase ? 'done' : i === phase ? 'active' : ''}`}
+              style={i === phase ? { width: `${progress}%`, transition: `width ${50}ms linear` } : {}}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
@@ -490,49 +888,111 @@ function App() {
     return (
       <>
         <div className="auth-screen">
-          <div className="auth-logo">⚡</div>
-          <h1 className="auth-title">AI Codebase Assistant</h1>
-          <p className="auth-subtitle">Ask questions about your code in plain English</p>
-          <div className="auth-card">
-            <h2>{isRegistering ? 'Create account' : 'Sign in'}</h2>
-            <div className="auth-field">
-              <label htmlFor="auth-user">Username</label>
-              <input
-                id="auth-user"
-                className="auth-input"
-                type="text"
-                placeholder="your-username"
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
-                autoComplete="username"
-              />
+          {/* ── LEFT PANEL ── */}
+          <div className="auth-left">
+            <div className="auth-left-bg" />
+
+            <div className="auth-left-top">
+              <div className="auth-left-logo">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#00f5ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+              </div>
+              <span className="auth-left-brand">AI Codebase Assistant</span>
             </div>
-            <div className="auth-field">
-              <label htmlFor="auth-pass">Password</label>
-              <input
-                id="auth-pass"
-                className="auth-input"
-                type="password"
-                placeholder="••••••••"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
-                autoComplete={isRegistering ? 'new-password' : 'current-password'}
-              />
+
+            <div className="auth-left-middle">
+              <div>
+                <h2 className="auth-left-heading">
+                  Ask anything about<br />
+                  <span>any codebase.</span>
+                </h2>
+                <p className="auth-left-desc">
+                  Upload a repository, ask questions in plain English,
+                  and get cited answers with exact file and line references.
+                </p>
+              </div>
+
+              <AuthStoryPanel />
+
+              <div className="auth-left-stats">
+                <div className="auth-stat">
+                  <span className="auth-stat-value">6</span>
+                  <span className="auth-stat-label">Languages</span>
+                </div>
+                <div className="auth-stat">
+                  <span className="auth-stat-value">200+</span>
+                  <span className="auth-stat-label">Files supported</span>
+                </div>
+                <div className="auth-stat">
+                  <span className="auth-stat-value">SSE</span>
+                  <span className="auth-stat-label">Streaming</span>
+                </div>
+              </div>
             </div>
-            <button
-              className="auth-submit"
-              onClick={isRegistering ? register : login}
-              disabled={!authUsername || !authPassword}
-            >
-              {isRegistering ? 'Create account' : 'Sign in'}
-            </button>
-            <div className="auth-toggle">
-              {isRegistering ? 'Already have an account?' : "Don't have an account?"}
-              <button onClick={() => setIsRegistering(!isRegistering)}>
-                {isRegistering ? 'Sign in' : 'Register'}
-              </button>
+
+            <div className="auth-left-bottom">
+              Built with FastAPI · RAG · MongoDB Atlas · OpenAI
+            </div>
+          </div>
+
+          {/* ── RIGHT PANEL ── */}
+          <div className="auth-right">
+            <div className="auth-right-inner">
+              <div className="auth-right-header">
+                <h1 className="auth-right-title">
+                  {isRegistering ? 'Create account' : 'Welcome back'}
+                </h1>
+                <p className="auth-right-sub">
+                  {isRegistering
+                    ? 'Start exploring your codebase in seconds.'
+                    : 'Sign in to continue to your assistant.'}
+                </p>
+              </div>
+
+              <div className="auth-card">
+                <h2>{isRegistering ? 'Create account' : 'Sign in'}</h2>
+                <div className="auth-field">
+                  <label htmlFor="auth-user">Username</label>
+                  <input
+                    id="auth-user"
+                    className="auth-input"
+                    type="text"
+                    placeholder="your-username"
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="auth-field">
+                  <label htmlFor="auth-pass">Password</label>
+                  <input
+                    id="auth-pass"
+                    className="auth-input"
+                    type="password"
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (isRegistering ? register() : login())}
+                    autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                  />
+                </div>
+                <button
+                  className="auth-submit"
+                  onClick={isRegistering ? register : login}
+                  disabled={!authUsername || !authPassword}
+                >
+                  {isRegistering ? 'Create account' : 'Sign in'}
+                </button>
+                <div className="auth-toggle">
+                  {isRegistering ? 'Already have an account?' : "Don't have an account?"}
+                  <button onClick={() => setIsRegistering(!isRegistering)}>
+                    {isRegistering ? 'Sign in' : 'Register'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -561,7 +1021,12 @@ function App() {
 
       <header>
         <div className="header-brand">
-          <div className="header-logo">⚡</div>
+          <div className="header-logo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </div>
           <h1>AI Codebase Assistant</h1>
         </div>
         <div className="header-right">
@@ -578,11 +1043,21 @@ function App() {
 
           {/* Upload ZIP */}
           <div className="sidebar-section">
-            <div className="section-label">Upload Repository</div>
+            <div className="section-label">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Upload Repository
+            </div>
             <div className="input-group">
-              <label className="file-label">
-                <span>📁</span>
-                <span>{uploadFile ? uploadFile.name : 'Choose ZIP file'}</span>
+              <label className={`upload-zone ${uploadFile ? 'has-file' : ''}`}>
+                <svg className="upload-zone-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span className="upload-zone-text">
+                  {uploadFile ? uploadFile.name : 'Drop ZIP here or click to browse'}
+                </span>
+                {!uploadFile && <span className="upload-zone-sub">Supports .zip files</span>}
                 <input
                   ref={uploadInputRef}
                   type="file"
@@ -605,7 +1080,10 @@ function App() {
 
           {/* GitHub Import */}
           <div className="sidebar-section">
-            <div className="section-label">Import from GitHub</div>
+            <div className="section-label">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              Import from GitHub
+            </div>
             <div className="input-group">
               <input
                 className="text-input"
@@ -630,7 +1108,10 @@ function App() {
 
           {/* Repository select */}
           <div className="sidebar-section">
-            <div className="section-label">Active Repository</div>
+            <div className="section-label">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Active Repository
+            </div>
             <select
               className="repo-select"
               value={selectedRepo}
@@ -643,16 +1124,37 @@ function App() {
                 </option>
               ))}
             </select>
+            {activeRepo && (
+              <div className="repo-card">
+                <span className="repo-card-name">{activeRepo.name}</span>
+                <span className={`repo-card-badge ${activeRepo.status}`}>
+                  {activeRepo.status === 'indexed'
+                    ? '✓ Ready'
+                    : activeRepo.status === 'indexing'
+                    ? 'Indexing…'
+                    : 'Failed'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Re-index (only when repo selected) */}
           {selectedRepo && (
             <div className="sidebar-section">
-              <div className="section-label">Re-index Repository</div>
+              <div className="section-label">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Re-index Repository
+              </div>
               <div className="input-group">
-                <label className="file-label">
-                  <span>📁</span>
-                  <span>{reindexFile ? reindexFile.name : 'Choose updated ZIP'}</span>
+                <label className={`upload-zone ${reindexFile ? 'has-file' : ''}`}>
+                  <svg className="upload-zone-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                  <span className="upload-zone-text">
+                    {reindexFile ? reindexFile.name : 'Drop updated ZIP here'}
+                  </span>
+                  {!reindexFile && <span className="upload-zone-sub">Replaces current index</span>}
                   <input
                     ref={reindexInputRef}
                     type="file"
@@ -678,7 +1180,10 @@ function App() {
           {selectedRepo && (
             <div className="sidebar-section" style={{ flex: 1, overflowY: 'auto' }}>
               <div className="sessions-header">
-                <div className="section-label" style={{ margin: 0 }}>Conversations</div>
+                <div className="section-label" style={{ margin: 0 }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  Conversations
+                </div>
                 <button className="btn btn-new-chat" onClick={startNewSession}>+ New</button>
               </div>
               {sessions.length === 0 ? (
@@ -692,8 +1197,14 @@ function App() {
                       onClick={() => selectSession(session.id)}
                     >
                       <div className="session-info">
-                        <span className="session-date">{formatTime(session.updated_at || session.created_at)}</span>
-                        <span className="session-count">{session.message_count} messages</span>
+                        <span className="session-preview">
+                          {session.first_message
+                            ? session.first_message.slice(0, 28) + (session.first_message.length > 28 ? '…' : '')
+                            : `Chat · ${formatTime(session.created_at)}`}
+                        </span>
+                        <span className="session-meta">
+                          {session.message_count} msgs · {formatTime(session.updated_at || session.created_at)}
+                        </span>
                       </div>
                       <button
                         className="session-delete-btn"
@@ -713,9 +1224,53 @@ function App() {
         <section className="chat-section">
           {!selectedRepo ? (
             <div className="empty-state">
-              <div className="empty-state-icon">💬</div>
-              <h3>Select a repository to start</h3>
-              <p>Upload a ZIP or import from GitHub, then select it from the dropdown above.</p>
+              <div className="empty-state-icon">
+                <span className="empty-state-icon-svg">&lt;/&gt;</span>
+              </div>
+              <h3>AI Codebase Assistant</h3>
+              <p>Upload or import a repository, then interrogate it in plain English.</p>
+              <div className="empty-state-features">
+                <div className="feature-row">
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="11" r="8"/>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                  </span>
+                  Hybrid BM25 + semantic search with RRF fusion
+                </div>
+                <div className="feature-row">
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="3" y1="6" x2="21" y2="6"/>
+                      <line x1="3" y1="12" x2="15" y2="12"/>
+                      <line x1="3" y1="18" x2="9" y2="18"/>
+                      <polyline points="17 15 21 12 17 9"/>
+                    </svg>
+                  </span>
+                  Cohere reranking across 6 languages
+                </div>
+                <div className="feature-row">
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="16" y1="13" x2="8" y2="13"/>
+                      <line x1="16" y1="17" x2="8" y2="17"/>
+                      <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                  </span>
+                  Cited answers — exact file path + line numbers
+                </div>
+                <div className="feature-row">
+                  <span className="feature-row-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                  </span>
+                  Streaming SSE · persistent sessions · JWT auth
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -736,6 +1291,7 @@ function App() {
               )}
 
               <div className="chat-messages">
+               <div className="messages-inner">
                 {chatHistory.length === 0 && (
                   <div className="empty-chat">
                     <div className="empty-chat-icon">💬</div>
@@ -789,7 +1345,15 @@ function App() {
                               {src.name && (
                                 <span className="chunk-name"> · {src.chunk_type}: {src.name}</span>
                               )}
-                              <span className="score">{src.score?.toFixed(3)}</span>
+                              <span
+                                className="score"
+                                style={{
+                                  color: src.score < 0 ? 'var(--amber)' : 'var(--green)',
+                                  background: src.score < 0 ? 'rgba(245,158,11,0.1)' : 'var(--green-subtle)'
+                                }}
+                              >
+                                {src.score?.toFixed(3)}
+                              </span>
                             </li>
                           ))}
                         </ul>
@@ -801,9 +1365,11 @@ function App() {
                 ))}
 
                 <div ref={chatEndRef} />
+               </div>
               </div>
 
               <div className="chat-input-area">
+               <div className="chat-input-inner">
                 <div className="input-wrapper">
                   <textarea
                     className="chat-textarea"
@@ -818,11 +1384,22 @@ function App() {
                     className="send-btn"
                     onClick={askQuestion}
                     disabled={chatLoading || !question.trim() || !repoReady}
+                    title="Send"
                   >
-                    {chatLoading ? '...' : 'Send ↑'}
+                    {chatLoading ? (
+                      <div className="thinking-dots" style={{ gap: '3px' }}>
+                        <span /><span /><span />
+                      </div>
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="19" x2="12" y2="5"/>
+                        <polyline points="5 12 12 5 19 12"/>
+                      </svg>
+                    )}
                   </button>
                 </div>
                 <p className="input-hint">Enter to send · Shift+Enter for new line</p>
+               </div>
               </div>
             </>
           )}
