@@ -202,15 +202,7 @@ function AuthStoryPanel() {
                 <div className={`pipeline-merge-branch ${pipelineStep >= 4 ? 'lit' : ''}`}>
                   <div className="pipeline-branch-node purple">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3"/>
-                      <circle cx="4" cy="6" r="2"/>
-                      <circle cx="20" cy="6" r="2"/>
-                      <circle cx="4" cy="18" r="2"/>
-                      <circle cx="20" cy="18" r="2"/>
-                      <line x1="6" y1="7" x2="10" y2="10"/>
-                      <line x1="18" y1="7" x2="14" y2="10"/>
-                      <line x1="6" y1="17" x2="10" y2="14"/>
-                      <line x1="18" y1="17" x2="14" y2="14"/>
+                      <path d="M2 12 Q6 6 10 12 Q14 18 18 12 Q20 9 22 12"/>
                     </svg>
                     Semantic
                   </div>
@@ -222,10 +214,25 @@ function AuthStoryPanel() {
             </div>
 
             {/* Row 3: Reranker → Answer */}
-            <div className="pipeline-track">
-              <div className={`pipeline-node-v2 lit-purple ${pipelineStep >= 5 ? 'lit-purple' : ''}`}
-                   style={{ opacity: pipelineStep >= 5 ? 1 : 0, transform: pipelineStep >= 5 ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.4s ease' }}>
-                <div className="pipeline-node-box">
+            <div className="pipeline-track" style={{ justifyContent: 'center', gap: '0' }}>
+              <div
+                style={{
+                  opacity: pipelineStep >= 5 ? 1 : 0,
+                  transform: pipelineStep >= 5 ? 'translateY(0)' : 'translateY(8px)',
+                  transition: 'all 0.4s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <div className={`pipeline-node-box ${pipelineStep >= 5 ? 'lit-purple-box' : ''}`}
+                     style={{
+                       borderColor: pipelineStep >= 5 ? 'rgba(191,95,255,0.6)' : 'rgba(0,245,255,0.15)',
+                       boxShadow: pipelineStep >= 5 ? '0 0 16px rgba(191,95,255,0.25), inset 0 0 8px rgba(191,95,255,0.05)' : 'none',
+                       background: pipelineStep >= 5 ? 'rgba(191,95,255,0.05)' : 'var(--bg-elevated)',
+                       color: pipelineStep >= 5 ? 'var(--purple)' : 'var(--text-muted)',
+                     }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="3" y1="6" x2="21" y2="6"/>
                     <line x1="3" y1="12" x2="15" y2="12"/>
@@ -233,26 +240,60 @@ function AuthStoryPanel() {
                     <polyline points="17 15 21 12 17 9"/>
                   </svg>
                 </div>
-                <span className="pipeline-node-label">Cohere Rerank</span>
+                <span className="pipeline-node-label" style={{ color: pipelineStep >= 5 ? 'var(--purple)' : 'var(--text-muted)' }}>
+                  Cohere Rerank
+                </span>
               </div>
-              <div className="pipeline-connector">
+
+              <div className="pipeline-connector" style={{ minWidth: '60px', maxWidth: '120px' }}>
                 <div className={`pipeline-connector-fill purple ${pipelineStep >= 6 ? 'active' : ''}`} />
               </div>
-              <div className={`pipeline-node-v2 ${pipelineStep >= 6 ? 'lit-green' : ''}`}
-                   style={{ opacity: pipelineStep >= 6 ? 1 : 0, transform: pipelineStep >= 6 ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.4s ease' }}>
-                <div className="pipeline-node-box">
+
+              <div
+                style={{
+                  opacity: pipelineStep >= 6 ? 1 : 0,
+                  transform: pipelineStep >= 6 ? 'translateY(0)' : 'translateY(8px)',
+                  transition: 'all 0.4s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <div className="pipeline-node-box"
+                     style={{
+                       borderColor: pipelineStep >= 6 ? 'rgba(0,255,159,0.6)' : 'rgba(0,245,255,0.15)',
+                       boxShadow: pipelineStep >= 6 ? '0 0 16px rgba(0,255,159,0.25), inset 0 0 8px rgba(0,255,159,0.05)' : 'none',
+                       background: pipelineStep >= 6 ? 'rgba(0,255,159,0.05)' : 'var(--bg-elevated)',
+                       color: pipelineStep >= 6 ? 'var(--green)' : 'var(--text-muted)',
+                     }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10"/>
                     <polyline points="8 12 11 15 16 9"/>
                   </svg>
                 </div>
-                <span className="pipeline-node-label">Cited Answer</span>
+                <span className="pipeline-node-label" style={{ color: pipelineStep >= 6 ? 'var(--green)' : 'var(--text-muted)' }}>
+                  Cited Answer
+                </span>
               </div>
-              <div className="pipeline-connector">
+
+              <div className="pipeline-connector" style={{ minWidth: '40px', maxWidth: '80px' }}>
                 <div className={`pipeline-connector-fill green ${pipelineStep >= 6 ? 'active' : ''}`} />
               </div>
-              <div className={`pipeline-score-counter ${pipelineStep >= 6 ? 'lit' : ''}`}
-                   style={{ alignSelf: 'center', marginBottom: '1.4rem' }}>
+
+              <div
+                style={{
+                  alignSelf: 'center',
+                  marginBottom: '1.4rem',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '0.65rem',
+                  color: 'var(--green)',
+                  opacity: pipelineStep >= 6 ? 1 : 0,
+                  transition: 'opacity 0.3s ease',
+                  textShadow: '0 0 8px rgba(0,255,159,0.5)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 score: 0.94
               </div>
             </div>
@@ -874,6 +915,21 @@ function App() {
               </div>
 
               <AuthStoryPanel />
+
+              <div className="auth-left-stats">
+                <div className="auth-stat">
+                  <span className="auth-stat-value">6</span>
+                  <span className="auth-stat-label">Languages</span>
+                </div>
+                <div className="auth-stat">
+                  <span className="auth-stat-value">200+</span>
+                  <span className="auth-stat-label">Files supported</span>
+                </div>
+                <div className="auth-stat">
+                  <span className="auth-stat-value">SSE</span>
+                  <span className="auth-stat-label">Streaming</span>
+                </div>
+              </div>
             </div>
 
             <div className="auth-left-bottom">
