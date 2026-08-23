@@ -2695,3 +2695,77 @@ header h1 {
     padding-bottom: unset;
   }
 }
+
+/* ── Auth loading spinner ──────────────────────────────────────────────────── */
+.auth-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+}
+
+.auth-spinner-ring {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgba(0,245,255,0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spinRing 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spinRing {
+  to { transform: rotate(360deg); }
+}
+
+.auth-spinner-text {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.03em;
+  transition: opacity 0.3s ease;
+}
+
+/* ── Cold start info note ──────────────────────────────────────────────────── */
+.cold-start-note {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.75rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+  justify-content: center;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.cold-start-note.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cold-start-note-icon {
+  font-size: 0.7rem;
+  color: rgba(0,245,255,0.3);
+  flex-shrink: 0;
+}
+
+.cold-start-note-text {
+  color: rgba(255,255,255,0.2);
+}
+
+.cold-start-note-text strong {
+  color: rgba(0,245,255,0.4);
+  font-weight: 600;
+}
+
+/* ── Auth submit loading state ─────────────────────────────────────────────── */
+.auth-submit.is-loading {
+  animation: none;
+  border-color: rgba(0,245,255,0.4);
+  background: rgba(0,245,255,0.04);
+  cursor: wait;
+}

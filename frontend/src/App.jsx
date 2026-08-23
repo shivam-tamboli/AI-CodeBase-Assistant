@@ -417,11 +417,82 @@ function AuthStoryPanel() {
   )
 }
 
+function AuthLoadingButton({ isLoading, isRegistering, disabled, onClick }) {
+  const [msgIndex, setMsgIndex] = React.useState(0)
+  const [showNote, setShowNote] = React.useState(false)
+
+  const loginMessages = [
+    'Signing in...',
+    'Connecting to server...',
+    'Server is waking up...',
+    'Almost there, hang tight...',
+  ]
+
+  const registerMessages = [
+    'Creating account...',
+    'Connecting to server...',
+    'Server is waking up...',
+    'Almost there, hang tight...',
+  ]
+
+  const messages = isRegistering ? registerMessages : loginMessages
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      setMsgIndex(0)
+      setShowNote(false)
+      return
+    }
+
+    setShowNote(false)
+
+    const timers = []
+
+    timers.push(setTimeout(() => setMsgIndex(1), 5000))
+    timers.push(setTimeout(() => {
+      setMsgIndex(2)
+      setShowNote(true)
+    }, 15000))
+    timers.push(setTimeout(() => setMsgIndex(3), 30000))
+
+    return () => timers.forEach(t => clearTimeout(t))
+  }, [isLoading])
+
+  return (
+    <div style={{ width: '100%' }}>
+      <button
+        className={`auth-submit ${isLoading ? 'is-loading' : ''}`}
+        onClick={onClick}
+        disabled={disabled || isLoading}
+        style={{ width: '100%' }}
+      >
+        {isLoading ? (
+          <span className="auth-spinner">
+            <span className="auth-spinner-ring" />
+            <span className="auth-spinner-text">{messages[msgIndex]}</span>
+          </span>
+        ) : (
+          isRegistering ? 'Create account' : 'Sign in'
+        )}
+      </button>
+
+      <div className={`cold-start-note ${showNote ? 'visible' : ''}`}>
+        <span className="cold-start-note-icon">ⓘ</span>
+        <span className="cold-start-note-text">
+          <strong>Server cold start</strong> — free tier wakes up in ~30s.
+          Hang tight, it's working.
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
   const [username, setUsername] = useState(localStorage.getItem('username') || '')
   const [isRegistering, setIsRegistering] = useState(false)
   const [authUsername, setAuthUsername] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
   const [authPassword, setAuthPassword] = useState('')
 
   // Repository state
@@ -593,6 +664,7 @@ function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   const login = async () => {
+    setAuthLoading(true)
     try {
       const res = await axios.post(`${API_URL}/auth/login`, { username: authUsername, password: authPassword })
       const newToken = res.data.access_token
@@ -603,10 +675,13 @@ function App() {
       fetchRepositories(newToken)
     } catch (err) {
       showToast('Login failed: ' + (err.response?.data?.detail || err.message), 'error')
+    } finally {
+      setAuthLoading(false)
     }
   }
 
   const register = async () => {
+    setAuthLoading(true)
     try {
       const res = await axios.post(`${API_URL}/auth/register`, { username: authUsername, password: authPassword })
       const newToken = res.data.access_token
@@ -617,6 +692,8 @@ function App() {
       fetchRepositories(newToken)
     } catch (err) {
       showToast('Registration failed: ' + (err.response?.data?.detail || err.message), 'error')
+    } finally {
+      setAuthLoading(false)
     }
   }
 
@@ -1000,19 +1077,27 @@ function App() {
                     autoComplete={isRegistering ? 'new-password' : 'current-password'}
                   />
                 </div>
-                <button
-                  className="auth-submit"
-                  onClick={isRegistering ? register : login}
+                <AuthLoadingButton
+                  isLoading={authLoading}
+                  isRegistering={isRegistering}
                   disabled={!authUsername || !authPassword}
-                >
-                  {isRegistering ? 'Create account' : 'Sign in'}
-                </button>
+                  onClick={isRegistering ? register : login}
+                />
                 <div className="auth-toggle">
                   {isRegistering ? 'Already have an account?' : "Don't have an account?"}
                   <button onClick={() => setIsRegistering(!isRegistering)}>
                     {isRegistering ? 'Sign in' : 'Register'}
                   </button>
                 </div>
+                <p style={{
+                  marginTop: '1.25rem',
+                  fontSize: '0.68rem',
+                  color: 'rgba(255,255,255,0.15)',
+                  textAlign: 'center',
+                  lineHeight: '1.5',
+                }}>
+                  ⓘ First sign in may take up to 30s — server cold start
+                </p>
               </div>
             </div>
           </div>
