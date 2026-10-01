@@ -479,7 +479,7 @@ function AuthLoadingButton({ isLoading, isRegistering, disabled, onClick }) {
       <div className={`cold-start-note ${showNote ? 'visible' : ''}`}>
         <span className="cold-start-note-icon">ⓘ</span>
         <span className="cold-start-note-text">
-          <strong>Server cold start</strong> — free tier wakes up in ~30s.
+          <strong>Server cold start</strong> — free tier wakes up in ~60s.
           Hang tight, it's working.
         </span>
       </div>
@@ -1091,12 +1091,12 @@ function App() {
                 </div>
                 <p style={{
                   marginTop: '1.25rem',
-                  fontSize: '0.68rem',
-                  color: 'rgba(255,255,255,0.15)',
+                  fontSize: '0.8rem',
+                  color: 'rgba(255,255,255,0.6)',
                   textAlign: 'center',
                   lineHeight: '1.5',
                 }}>
-                  ⓘ First sign in may take up to 30s — server cold start
+                  ⓘ First sign in may take up to 60s — server cold start
                 </p>
               </div>
             </div>
