@@ -19,6 +19,7 @@ from backend.services.chat_service import ChatService
 from backend.services.rag_pipeline import RAGPipeline
 from backend.auth.dependencies import get_current_user, get_optional_user
 from backend.middleware.rate_limiter import limiter
+from backend.api.repositories import require_readable_repo
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -80,6 +81,7 @@ async def create_chat_session(
     Rate limit: 10 requests per minute.
     """
     user_id = current_user.get("user_id")
+    await require_readable_repo(chat_request.repository_id, user_id)
 
     result = await ChatService.create_session(
         repository_id=chat_request.repository_id,
@@ -240,6 +242,7 @@ async def chat_query(
     Requires authentication.
     Rate limit: 10 requests per minute.
     """
+    await require_readable_repo(chat_request.repository_id, current_user.get("user_id"))
     session_id = chat_request.session_id
 
     if session_id:
@@ -301,6 +304,7 @@ async def chat_query_stream(
 
     Session messages are persisted after the "done" event.
     """
+    await require_readable_repo(chat_request.repository_id, current_user.get("user_id"))
     session_id = chat_request.session_id
 
     if session_id:

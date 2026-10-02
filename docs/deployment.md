@@ -188,6 +188,7 @@ Full reference of all supported environment variables. See [`backend/.env.exampl
 | `ENABLE_CHUNK_SUMMARIES` | No | `false` | Generate LLM summaries per chunk at index time |
 | `MAX_UPLOAD_MB` | No | `50` | Largest ZIP accepted by upload/reindex (HTTP 413 above this) |
 | `MAX_EXTRACTED_MB` | No | `200` | Largest total uncompressed size a ZIP may expand to (zip-bomb guard) |
+| `DEMO_REPO_URL` | No | `https://github.com/pallets/itsdangerous` | Public repo indexed at startup as the shared, read-only demo. Set to an empty value to disable the demo |
 | `ENVIRONMENT` | No | `development` | Set to `production` on Render — makes the refresh-token cookie `secure` and `samesite=none` so it works cross-origin |
 
 ---

@@ -213,7 +213,7 @@ export default function Sidebar({
           <option value="">-- Select a repository --</option>
           {repositories.map(repo => (
             <option key={repo.id} value={repo.id}>
-              {repo.name}{repo.status && repo.status !== 'indexed' ? ` (${repo.status}…)` : ''}
+              {repo.name}{repo.is_demo ? ' (demo)' : ''}{repo.status && repo.status !== 'indexed' ? ` (${repo.status}…)` : ''}
             </option>
           ))}
         </select>
@@ -231,8 +231,8 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Re-index (only when repo selected) */}
-      {selectedRepo && (
+      {/* Re-index (only for the user's own repos — the demo is read-only) */}
+      {selectedRepo && !activeRepo?.is_demo && (
         <div className="sidebar-section">
           <div className="section-label">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>

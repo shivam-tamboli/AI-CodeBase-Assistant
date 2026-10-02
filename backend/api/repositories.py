@@ -33,6 +33,50 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
+# Shared, read-only demo repo so people can try the app without importing
+# anything. Seeded in the background at startup (ensure_demo_repo); set
+# DEMO_REPO_URL to an empty string to turn it off.
+DEMO_REPO_URL = os.getenv("DEMO_REPO_URL", "https://github.com/pallets/itsdangerous").strip()
+DEMO_QUESTIONS = {
+    "https://github.com/pallets/itsdangerous": [
+        "How are tokens signed and verified?",
+        "How does TimestampSigner reject expired tokens?",
+        "What does URLSafeSerializer do differently?",
+        "Which hash algorithm is used by default?",
+    ],
+}
+
+
+def _can_read(repo: dict, user_id: str) -> bool:
+    """Owner, the shared demo, or a legacy repo with no owner."""
+    return bool(repo.get("is_demo")) or not repo.get("user_id") or repo["user_id"] == user_id
+
+
+def _reject_demo_write(repo: dict) -> None:
+    if repo.get("is_demo"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The demo repository is read-only"
+        )
+
+
+async def require_readable_repo(repo_id: str, user_id: str) -> dict:
+    """Load a repository the caller may read, or raise 400/404/403.
+
+    Used by the chat routes, which previously only checked that the
+    *session* belonged to the caller and never the repository.
+    """
+    db = Database.get_db()
+    try:
+        repo = await db.repositories.find_one({"_id": ObjectId(repo_id)})
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid repository ID format")
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repo_id}' not found")
+    if not _can_read(repo, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this repository")
+    return repo
+
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
 MAX_EXTRACTED_BYTES = int(os.getenv("MAX_EXTRACTED_MB", "200")) * 1024 * 1024
@@ -144,6 +188,34 @@ async def list_repositories(
 
     repos = await db.repositories.find({"user_id": user_id}).to_list(100)
     return [serialize_doc(repo) for repo in repos]
+
+
+@router.get("/demo")
+@limiter.limit("60/minute")
+async def get_demo_repository(
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """GET /repositories/demo — the shared, read-only demo repository.
+
+    404 if the demo is disabled or hasn't been created yet. `status` tells
+    the client whether it's ready to chat ("indexed") or still being built.
+    """
+    db = Database.get_db()
+    repo = await db.repositories.find_one({"is_demo": True}) if DEMO_REPO_URL else None
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo repository is not available")
+    return {
+        "id": str(repo["_id"]),
+        "name": repo.get("name", ""),
+        "description": repo.get("description", ""),
+        "source_url": repo.get("source_url", ""),
+        "status": repo.get("status", "unknown"),
+        "is_demo": True,
+        "created_at": repo.get("created_at"),
+        "updated_at": repo.get("updated_at"),
+        "suggested_questions": DEMO_QUESTIONS.get(repo.get("source_url", ""), []),
+    }
 
 
 @router.get("/{repo_id}", response_model=RepositoryResponse)
@@ -341,6 +413,7 @@ async def reindex_repository(
 
     if repo.get("user_id") and repo["user_id"] != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this repository")
+    _reject_demo_write(repo)
 
     temp_dir = tempfile.mkdtemp()
     try:
@@ -420,6 +493,7 @@ async def update_repository(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to update this repository"
         )
+    _reject_demo_write(repo)
 
     update_data = {"updated_at": datetime.now(timezone.utc)}
 
@@ -482,6 +556,7 @@ async def delete_repository(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to delete this repository"
         )
+    _reject_demo_write(repo)
 
     processor: RepositoryProcessor = request.app.state.processor
     await processor.delete_repository_data(repo_id)
@@ -695,6 +770,30 @@ def _git_clone_env(user_token: Optional[str]) -> dict:
     return env
 
 
+async def _git_clone(url: str, dest: str, branch: Optional[str] = None,
+                     user_token: Optional[str] = None, timeout: int = 120) -> tuple:
+    """Shallow-clone `url` into `dest`. Returns (returncode, scrubbed stderr).
+
+    Raises asyncio.TimeoutError (after killing git) if it takes too long.
+    """
+    cmd = ["git", "clone", "--depth", "1"]
+    if branch:
+        cmd += ["--branch", branch]
+    cmd += ["--", url, dest]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=_git_clone_env(user_token),
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise
+    return proc.returncode, _scrub_secret(stderr.decode(errors="replace").strip(), user_token)
+
+
 def _scrub_secret(text: str, secret: Optional[str]) -> str:
     if not secret:
         return text
@@ -744,30 +843,17 @@ async def import_repository(
     try:
         clone_path = os.path.join(temp_dir, repo_slug)
 
-        clone_cmd = ["git", "clone", "--depth", "1"]
-        if payload.branch:
-            clone_cmd += ["--branch", payload.branch]
-        clone_cmd += ["--", url, clone_path]
-
-        proc = await asyncio.create_subprocess_exec(
-            *clone_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=_git_clone_env(user_token),
-        )
         try:
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+            returncode, error_msg = await _git_clone(url, clone_path, payload.branch, user_token)
         except asyncio.TimeoutError:
-            proc.kill()
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Clone timed out after 120 seconds"
             )
 
-        if proc.returncode != 0:
-            # Scrub the token from stderr before returning it to the client.
-            error_msg = _scrub_secret(stderr.decode(errors="replace").strip(), user_token)
+        if returncode != 0:
+            # error_msg already has the token scrubbed by _git_clone.
             shutil.rmtree(temp_dir, ignore_errors=True)
             auth_failed = any(m in error_msg for m in (
                 "could not read Username", "Authentication failed", "Repository not found",
@@ -824,3 +910,55 @@ async def import_repository(
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
+
+
+async def ensure_demo_repo(processor: RepositoryProcessor) -> None:
+    """Make sure the shared demo repo exists and is indexed.
+
+    Runs as a background task at startup, so it never delays the first
+    request. Does nothing once the demo is indexed; re-builds it if it's
+    missing, failed, points at a different DEMO_REPO_URL, or was left
+    half-done by a previous process (an ingestion task doesn't survive a
+    restart, so anything not "indexed" at boot is stale).
+    """
+    if not DEMO_REPO_URL:
+        return
+    db = Database.get_db()
+    existing = await db.repositories.find_one({"is_demo": True})
+    if existing and existing.get("status") == "indexed" and existing.get("source_url") == DEMO_REPO_URL:
+        return
+
+    slug = DEMO_REPO_URL.rstrip("/").split("/")[-1]
+    fields = {
+        "name": slug,
+        "description": f"Demo repository ({DEMO_REPO_URL})",
+        "user_id": None,
+        "is_demo": True,
+        "source_url": DEMO_REPO_URL,
+        "status": "pending",
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if existing:
+        repo_id = str(existing["_id"])
+        await processor.delete_repository_data(repo_id)
+        await db.repositories.update_one({"_id": existing["_id"]}, {"$set": fields, "$unset": {"error": ""}})
+    else:
+        fields["created_at"] = datetime.now(timezone.utc)
+        repo_id = str((await db.repositories.insert_one(fields)).inserted_id)
+
+    logger.info("Seeding demo repository %s from %s", repo_id, DEMO_REPO_URL)
+    temp_dir = tempfile.mkdtemp()
+    clone_path = os.path.join(temp_dir, slug)
+    try:
+        returncode, error_msg = await _git_clone(DEMO_REPO_URL, clone_path)
+    except asyncio.TimeoutError:
+        returncode, error_msg = 1, "clone timed out"
+    if returncode != 0:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.error("Demo repository clone failed: %s", error_msg)
+        await db.repositories.update_one(
+            {"_id": ObjectId(repo_id)},
+            {"$set": {"status": "failed", "error": f"Clone failed: {error_msg}", "updated_at": datetime.now(timezone.utc)}},
+        )
+        return
+    await _run_ingestion(repo_id, clone_path, temp_dir, processor, False)

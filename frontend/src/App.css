@@ -619,6 +619,52 @@ header h1 {
 }
 
 /* ── Session Badge ─────────────────────────────────────────────────────────── */
+/* ── Demo repo ─────────────────────────────────────────────────────────────── */
+.demo-cta {
+  margin-top: 0.25rem;
+  padding: 0.6rem 1.5rem;
+  font-size: 0.85rem;
+}
+
+.demo-cta-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: -0.25rem;
+}
+
+.demo-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.45rem 1.5rem;
+  background: rgba(0,245,255,0.05);
+  border-bottom: 1px solid rgba(0,245,255,0.15);
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.demo-banner-tag {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(0,245,255,0.4);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+}
+
+.demo-banner a {
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+}
+
+.demo-banner a:hover { text-decoration: underline; }
+
 .session-badge {
   display: flex;
   align-items: center;
