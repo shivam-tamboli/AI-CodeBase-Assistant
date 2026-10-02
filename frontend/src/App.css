@@ -952,13 +952,28 @@ header h1 {
 .chunk-name  { color: #a78bfa; font-size: 0.72rem; }
 .source-lines { color: var(--text-muted); font-size: 0.72rem; }
 
-.score {
+.sources-order {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.source-rank {
   margin-left: auto;
-  font-weight: 700;
-  font-size: 0.68rem;
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 0.66rem;
   font-family: 'JetBrains Mono', monospace;
-  padding: 0.1rem 0.35rem;
+  padding: 0.1rem 0.4rem;
   border-radius: 4px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.source-rank.top {
+  color: var(--green);
+  background: var(--green-subtle);
+  border-color: transparent;
 }
 
 /* ── Chat Input ────────────────────────────────────────────────────────────── */
@@ -2072,9 +2087,6 @@ header h1 {
   border: 1px solid rgba(0,255,159,0.2);
 }
 
-/* ── Sources score neon ────────────────────────────────────────────────────── */
-.score { font-family: 'JetBrains Mono', monospace; }
-
 /* ── Code inline neon ──────────────────────────────────────────────────────── */
 .message-assistant .message-content code {
   color: var(--accent);
@@ -2722,8 +2734,8 @@ header h1 {
     font-size: 0.65rem;
   }
 
-  .score {
-    font-size: 0.62rem;
+  .source-rank {
+    font-size: 0.6rem;
   }
 
 }

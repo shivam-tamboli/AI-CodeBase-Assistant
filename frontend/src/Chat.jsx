@@ -255,6 +255,7 @@ export default function Chat({
                   <div className="sources">
                     <div className="sources-title">
                       📌 Sources ({msg.sources.length} chunks)
+                      <span className="sources-order">· ranked by relevance</span>
                     </div>
                     <ul>
                       {msg.sources.map((src, j) => (
@@ -266,14 +267,13 @@ export default function Chat({
                           {src.name && (
                             <span className="chunk-name"> · {src.chunk_type}: {src.name}</span>
                           )}
+                          {/* Raw scores aren't comparable between Cohere and the
+                              fallback ranker, but the order is: sources arrive best-first. */}
                           <span
-                            className="score"
-                            style={{
-                              color: src.score < 0 ? 'var(--amber)' : 'var(--green)',
-                              background: src.score < 0 ? 'rgba(245,158,11,0.1)' : 'var(--green-subtle)'
-                            }}
+                            className={`source-rank${j === 0 ? ' top' : ''}`}
+                            title="Sources are listed from most to least relevant"
                           >
-                            {src.score?.toFixed(3)}
+                            {j === 0 ? 'Best match' : `#${j + 1}`}
                           </span>
                         </li>
                       ))}
