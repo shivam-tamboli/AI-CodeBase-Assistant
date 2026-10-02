@@ -227,11 +227,14 @@ function App() {
               <polyline points="8 6 2 12 8 18"/>
             </svg>
           </div>
-          <h1>AI Codebase Assistant</h1>
+          <h1 aria-label="AI Codebase Assistant">
+            <span className="title-full">AI Codebase Assistant</span>
+            <span className="title-short" aria-hidden="true">AI Codebase</span>
+          </h1>
         </div>
         <div className="header-right">
           <div className="status-dot" title="Connected" />
-          <span className="username-label">{username}</span>
+          <span className="username-label" title={username}>{username}</span>
           <button className="logout-btn" onClick={logout}>Logout</button>
         </div>
       </header>
