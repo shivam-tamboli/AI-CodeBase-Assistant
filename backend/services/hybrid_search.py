@@ -50,13 +50,52 @@ class HybridSearchService:
 
         combined = self._reciprocal_rank_fusion(semantic_results, keyword_results)
 
+        # Rerank a larger pool than we return so there's something left to
+        # pick from after overlapping windows of the same code are dropped.
+        pool = limit * 3
         try:
-            reranked = await self._cohere_rerank(combined, query, limit)
+            reranked = await self._cohere_rerank(combined, query, pool)
         except Exception as e:
             logger.warning("Cohere rerank unavailable (%s), using heuristic rerank", e)
             reranked = self._bm25_rerank(combined, query)
 
-        return reranked[:limit]
+        return self._drop_overlapping(reranked, limit)
+
+    @staticmethod
+    def _drop_overlapping(
+        results: List[Dict[str, Any]], limit: int, max_overlap: float = 0.5
+    ) -> List[Dict[str, Any]]:
+        """Keep the best-ranked of overlapping windows of the same symbol.
+
+        Large symbols are split into overlapping windows, and those windows
+        tend to rank side by side. Without this, the context sent to the LLM
+        can be five views of one class instead of five relevant pieces.
+        A result is skipped when it is the same symbol (file, name, chunk
+        type) as an already-picked result and more than `max_overlap` of the
+        shorter line range is shared. Different symbols are never merged:
+        the synthesized imports chunk, for one, claims lines 1-50 regardless
+        of what it contains.
+        """
+        picked: List[Dict[str, Any]] = []
+        for doc in results:
+            meta = doc.get("metadata", {})
+            key = (meta.get("file_path", ""), meta.get("name", ""), meta.get("chunk_type", ""))
+            start, end = meta.get("start_line", 0), meta.get("end_line", 0)
+            duplicate = False
+            for kept in picked:
+                km = kept.get("metadata", {})
+                if (km.get("file_path", ""), km.get("name", ""), km.get("chunk_type", "")) != key:
+                    continue
+                shared = min(end, km.get("end_line", 0)) - max(start, km.get("start_line", 0)) + 1
+                shorter = min(end - start, km.get("end_line", 0) - km.get("start_line", 0)) + 1
+                if shared > 0 and shorter > 0 and shared / shorter > max_overlap:
+                    duplicate = True
+                    break
+            if not duplicate:
+                picked.append(doc)
+                if len(picked) == limit:
+                    break
+        return picked
     
     def _reciprocal_rank_fusion(
         self, 
