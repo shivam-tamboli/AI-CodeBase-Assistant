@@ -185,3 +185,78 @@ class TestRRF:
         results = self.service._reciprocal_rank_fusion(sem, kw)
         paths = {r["metadata"]["file_path"] for r in results}
         assert paths == {"a.py", "b.py", "c.py", "d.py"}
+
+
+# ---------------------------------------------------------------------------
+# Chunk overlap is bounded in tokens (regression: it used to be 100 *lines*)
+# ---------------------------------------------------------------------------
+
+def _big_class(n_methods=60):
+    body = "\n".join(
+        f"    def method_{i}(self, value):\n"
+        f"        \"\"\"Docstring for method {i} explaining what it does.\"\"\"\n"
+        f"        result = value * {i} + self.offset\n"
+        f"        return result\n"
+        for i in range(n_methods)
+    )
+    return f"class Big:\n    offset = 1\n\n{body}\n"
+
+
+class TestChunkOverlap:
+    def setup_method(self):
+        self.chunker = CodeChunker(max_tokens=1000, overlap=100)
+
+    def test_large_class_is_not_split_into_near_duplicates(self):
+        src = _big_class()
+        total_tokens = self.chunker.count_tokens(src)
+        pieces = [c for c in self.chunker.chunk_file(src, "big.py") if c["name"] == "Big"]
+        # With ~100 tokens of overlap, each piece adds ~900 new tokens.
+        assert 1 < len(pieces) <= total_tokens // 900 + 2
+
+    def test_consecutive_pieces_overlap_by_at_most_overlap_tokens(self):
+        pieces = [c for c in self.chunker.chunk_file(_big_class(), "big.py") if c["name"] == "Big"]
+        for prev, nxt in zip(pieces, pieces[1:]):
+            shared_lines = prev["end_line"] - nxt["start_line"] + 1
+            assert shared_lines >= 0
+            shared_text = "\n".join(prev["content"].split("\n")[-shared_lines:]) if shared_lines else ""
+            assert self.chunker.count_tokens(shared_text) <= 100 + 20  # +slack for the joining newline
+            assert nxt["start_line"] > prev["start_line"] + 10  # actually moves forward
+
+
+# ---------------------------------------------------------------------------
+# Retrieval drops overlapping windows of the same code
+# ---------------------------------------------------------------------------
+
+def _hit(path, start, end, name="x", chunk_type="class"):
+    return {"content": f"{path}:{start}", "metadata": {"file_path": path, "start_line": start, "end_line": end, "name": name, "chunk_type": chunk_type}}
+
+
+class TestDropOverlapping:
+    def setup_method(self):
+        from backend.services.hybrid_search import HybridSearchService
+        self.drop = HybridSearchService._drop_overlapping
+
+    def test_near_identical_windows_collapse_to_best_ranked(self):
+        ranked = [_hit("s.py", 40, 128), _hit("s.py", 40, 129), _hit("s.py", 40, 130), _hit("t.py", 1, 50), _hit("s.py", 40, 131)]
+        out = self.drop(ranked, limit=5)
+        assert [(h["metadata"]["file_path"], h["metadata"]["end_line"]) for h in out] == [("s.py", 128), ("t.py", 50)]
+
+    def test_adjacent_or_slightly_overlapping_chunks_are_kept(self):
+        ranked = [_hit("s.py", 1, 100), _hit("s.py", 95, 200), _hit("s.py", 201, 300)]
+        assert len(self.drop(ranked, limit=5)) == 3
+
+    def test_same_lines_in_different_files_are_kept(self):
+        ranked = [_hit("a.py", 1, 50), _hit("b.py", 1, 50)]
+        assert len(self.drop(ranked, limit=5)) == 2
+
+    def test_respects_limit_after_dropping(self):
+        ranked = [_hit("s.py", 1, 100), _hit("s.py", 1, 101)] + [_hit(f"f{i}.py", 1, 10) for i in range(10)]
+        out = self.drop(ranked, limit=5)
+        assert len(out) == 5 and out[0]["metadata"]["file_path"] == "s.py" and out[1]["metadata"]["file_path"] == "f0.py"
+
+    def test_different_symbols_with_overlapping_ranges_are_kept(self):
+        # The imports chunk is synthesized with a fixed 1-50 range, so it
+        # "overlaps" any function near the top of the file.
+        ranked = [_hit("m.py", 24, 45, name="escape", chunk_type="function"),
+                  _hit("m.py", 1, 50, name="__init__", chunk_type="imports")]
+        assert len(self.drop(ranked, limit=5)) == 2

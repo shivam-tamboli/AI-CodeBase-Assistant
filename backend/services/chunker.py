@@ -22,6 +22,23 @@ class CodeChunker:
         if not text:
             return 0
         return len(self.encoder.encode(text))
+
+    def _overlap_tail(self, lines: List[str]) -> List[str]:
+        """Trailing lines of a chunk to repeat at the start of the next one.
+
+        Bounded by self.overlap *tokens*, not a line count: slicing the last
+        N lines would carry over almost the whole chunk whenever N lines is
+        close to max_tokens, producing near-duplicate chunks.
+        """
+        tail: List[str] = []
+        tail_tokens = 0
+        for prev_line in reversed(lines):
+            t = self.count_tokens(prev_line + "\n")
+            if tail_tokens + t > self.overlap:
+                break
+            tail.insert(0, prev_line)
+            tail_tokens += t
+        return tail
     
     def chunk_file(self, source: str, file_path: str = "") -> List[Dict[str, Any]]:
         """Chunk Python source code using AST
@@ -164,7 +181,7 @@ class CodeChunker:
                         file_path=chunk["file_path"]
                     ))
                     
-                    overlap_lines = current_piece[-self.overlap:]
+                    overlap_lines = self._overlap_tail(current_piece)
                     current_piece = overlap_lines + [line]
                     current_tokens = self.count_tokens("\n".join(current_piece))
                     piece_start_line = piece_end_line - len(overlap_lines) + 1
@@ -265,19 +282,7 @@ class CodeChunker:
                     end_line=i - 1,
                     file_path=file_path,
                 ))
-                # Build overlap by including lines from the end of the current
-                # chunk until their cumulative token count reaches self.overlap.
-                # This bounds overlap in tokens, not line count, so dense code
-                # (e.g. 20 tokens/line) does not produce overlap larger than
-                # the chunk itself.
-                overlap: List[str] = []
-                overlap_tokens = 0
-                for prev_line in reversed(current_lines):
-                    t = self.count_tokens(prev_line + "\n")
-                    if overlap_tokens + t > self.overlap:
-                        break
-                    overlap.insert(0, prev_line)
-                    overlap_tokens += t
+                overlap = self._overlap_tail(current_lines)
                 current_lines = overlap + [line]
                 current_tokens = self.count_tokens("\n".join(current_lines))
                 start_line = i - len(overlap)
