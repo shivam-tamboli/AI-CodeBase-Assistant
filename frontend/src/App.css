@@ -51,7 +51,9 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
 
 /* ── App Shell ─────────────────────────────────────────────────────────────── */
-.app { min-height: 100vh; display: flex; flex-direction: column; }
+/* Fixed height (not min-height) so .main-layout gets a definite size and the
+   message list scrolls inside its panel instead of growing the page. */
+.app { height: 100vh; display: flex; flex-direction: column; }
 
 /* ── Header ────────────────────────────────────────────────────────────────── */
 header {
@@ -148,6 +150,7 @@ header h1 {
 .main-layout {
   display: flex;
   flex: 1;
+  min-height: 0;  /* flex items default to min-height:auto and would grow with the chat */
   height: calc(100vh - 48px);
   overflow: hidden;
 }
@@ -2460,6 +2463,13 @@ header h1 {
     overflow-y: auto;
     padding-top: 0.875rem;
     padding-bottom: 0.875rem;
+  }
+
+  /* The open sidebar scrolls as one panel; don't let sections (notably the
+     conversations list, which is flex:1 inline for desktop) shrink to fit. */
+  .sidebar.mobile-open > .sidebar-section {
+    flex: none !important;
+    overflow: visible !important;
   }
 
   /* CHAT SECTION — full height */
