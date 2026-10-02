@@ -110,6 +110,7 @@ This step enables `$vectorSearch` HNSW indexing for semantic search. Without it 
 | `MONGODB_URI` | Your Atlas connection string |
 | `JWT_SECRET` | A long random string — generate one: `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `ALLOWED_ORIGINS` | Your Vercel frontend URL (add after frontend is deployed) |
+| `ENVIRONMENT` | `production` — makes the refresh-token cookie work across the Vercel and Render domains |
 | `COHERE_API_KEY` | Optional — enables cross-encoder re-ranking |
 | `LLM_PROVIDER` | `openai` or `anthropic` |
 | `LLM_MODEL` | `gpt-4o-mini` (recommended for cost) |
@@ -117,7 +118,7 @@ This step enables `$vectorSearch` HNSW indexing for semantic search. Without it 
 5. Click **Create Web Service**. Render builds and deploys automatically.
 6. Your backend URL will be: `https://your-app.onrender.com`
 
-> **Free tier note**: Render free tier spins down after 15 minutes of inactivity. The first request after a spin-down takes ~30 seconds (cold start). For a demo, this is acceptable. Upgrade to a paid tier to eliminate cold starts.
+> **Free tier note**: Render free tier spins down after 15 minutes of inactivity. The first request after a spin-down takes about 50–60 seconds (cold start; measured at 53 s). The frontend pings `/health` as soon as the login page loads so the wake-up starts while the visitor is still reading. Upgrade to a paid tier to eliminate cold starts.
 
 ---
 

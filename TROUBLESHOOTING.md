@@ -217,7 +217,7 @@ Check **Network Access** in Atlas — the Render server's IP must be allowed. Du
 Verify the Atlas index name is exactly `vector_search_index` and that `repository_id` is declared as a `filter` field (not `vector`). Check that the index status is **Active** in the Atlas UI.
 
 **Render cold start — first request is slow**  
-Expected on the free tier: the server spins down after 15 minutes of inactivity. The first request triggers a restart (~30 seconds). Subsequent requests are fast. Upgrade to a paid tier to eliminate cold starts.
+Expected on the free tier: the server spins down after 15 minutes of inactivity. The first request triggers a restart (about 50–60 seconds). Subsequent requests are fast. Upgrade to a paid tier to eliminate cold starts.
 
 ---
 
