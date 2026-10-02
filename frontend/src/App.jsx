@@ -620,6 +620,14 @@ function App() {
     if (token) fetchRepositories(token)
   }, [])
 
+  // On the login page, poke the backend right away so a Render cold start
+  // (~50s) overlaps with the user reading and typing, not with the spinner.
+  // Plain fetch: no credentials/headers means no CORS preflight, and it
+  // stays clear of the axios 401 interceptor. Failures don't matter.
+  useEffect(() => {
+    if (!token) fetch(`${API_URL}/health`).catch(() => {})
+  }, [token])
+
   // Load sessions when selected repo changes
   useEffect(() => {
     if (token && selectedRepo) {
