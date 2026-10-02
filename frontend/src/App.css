@@ -1371,6 +1371,9 @@ header h1 {
 
 .code-line { display: flex; align-items: center; gap: 0.5rem; }
 
+/* One span per line so the flex gap only separates the line number from the code */
+.code-text { white-space: pre; }
+
 .code-ln {
   color: var(--text-muted);
   font-size: 0.65rem;

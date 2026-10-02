@@ -157,7 +157,7 @@ export default function Chat({
                   <polyline points="17 15 21 12 17 9"/>
                 </svg>
               </span>
-              Cohere reranking across 6 languages
+              Cohere reranking of hybrid search results
             </div>
             <div className="feature-row">
               <span className="feature-row-icon">
