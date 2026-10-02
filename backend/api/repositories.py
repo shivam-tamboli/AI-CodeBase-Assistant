@@ -34,6 +34,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
 
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
+MAX_EXTRACTED_BYTES = int(os.getenv("MAX_EXTRACTED_MB", "200")) * 1024 * 1024
+
+
+def _save_upload(file: UploadFile, temp_dir: str) -> str:
+    """Stream the uploaded ZIP into temp_dir, enforcing MAX_UPLOAD_BYTES.
+
+    The filename is reduced to its basename: it comes from the client, and
+    joining it as-is would let "../../x.zip" write outside temp_dir.
+    """
+    safe_name = os.path.basename(file.filename or "") or "upload.zip"
+    zip_path = os.path.join(temp_dir, safe_name)
+    written = 0
+    with open(zip_path, "wb") as f:
+        while chunk := file.file.read(1024 * 1024):
+            written += len(chunk)
+            if written > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"ZIP is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+                )
+            f.write(chunk)
+    return zip_path
+
+
+def _extract_zip(zip_path: str, dest: str) -> None:
+    """Extract after checking the declared uncompressed size (zip-bomb guard)."""
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            total = sum(info.file_size for info in zip_ref.infolist())
+            if total > MAX_EXTRACTED_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"ZIP expands to more than {MAX_EXTRACTED_BYTES // (1024 * 1024)} MB"
+                )
+            zip_ref.extractall(dest)
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is not a valid ZIP archive"
+        )
+
+
 async def _run_ingestion(
     repo_id: str,
     extract_base: str,
@@ -214,12 +257,8 @@ async def upload_repository(
     # mkdtemp instead of TemporaryDirectory — background task owns cleanup.
     temp_dir = tempfile.mkdtemp()
     try:
-        zip_path = os.path.join(temp_dir, file.filename)
-        with open(zip_path, 'wb') as f:
-            shutil.copyfileobj(file.file, f)
-
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
+        zip_path = _save_upload(file, temp_dir)
+        _extract_zip(zip_path, temp_dir)
 
         root_content = [e for e in os.listdir(temp_dir) if e != os.path.basename(zip_path)]
         subdirectory = None
@@ -228,7 +267,7 @@ async def upload_repository(
             subdirectory = root_content[0]
             extract_base = os.path.join(temp_dir, subdirectory)
 
-        repo_name = name or subdirectory or file.filename.replace('.zip', '')
+        repo_name = name or subdirectory or os.path.basename(zip_path)[:-len('.zip')]
 
         doc = {
             "name": repo_name,
@@ -305,12 +344,8 @@ async def reindex_repository(
 
     temp_dir = tempfile.mkdtemp()
     try:
-        zip_path = os.path.join(temp_dir, file.filename)
-        with open(zip_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(temp_dir)
+        zip_path = _save_upload(file, temp_dir)
+        _extract_zip(zip_path, temp_dir)
 
         root_content = [e for e in os.listdir(temp_dir) if e != os.path.basename(zip_path)]
         extract_base = temp_dir
