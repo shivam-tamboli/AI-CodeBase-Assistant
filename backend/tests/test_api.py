@@ -478,3 +478,69 @@ class TestUploadHardening:
     async def test_not_a_zip_is_400(self, test_client, auth_headers):
         r = await self._upload(test_client, auth_headers, "fake.zip", b"definitely not a zip")
         assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Timestamps — always timezone-aware UTC
+# ---------------------------------------------------------------------------
+
+def _is_aware_utc(dt):
+    from datetime import timedelta
+    return dt.tzinfo is not None and dt.utcoffset() == timedelta(0)
+
+
+class TestUtcTimestamps:
+    async def test_register_stores_aware_utc(self, test_client, mock_db):
+        mock_db.users.find_one.return_value = None
+        r = await test_client.post("/auth/register", json={"username": "tzuser", "password": "password123"})
+        assert r.status_code == 201
+        assert _is_aware_utc(mock_db.users.insert_one.call_args[0][0]["created_at"])
+        assert _is_aware_utc(mock_db.refresh_tokens.insert_one.call_args[0][0]["expires_at"])
+
+    async def test_login_refresh_token_expiry_is_aware_utc(self, test_client, mock_db):
+        mock_db.users.find_one.return_value = _fake_user_doc()
+        r = await test_client.post("/auth/login", json={"username": "testuser", "password": "correctpassword"})
+        assert r.status_code == 200
+        assert _is_aware_utc(mock_db.refresh_tokens.insert_one.call_args[0][0]["expires_at"])
+
+    async def test_chat_session_timestamps_are_aware_utc(self, mock_db):
+        from backend.services.chat_service import ChatService
+        with patch("backend.database.Database.get_db", return_value=mock_db):
+            await ChatService.create_session("617f1f77bcf86cd799439022", "507f1f77bcf86cd799439011")
+            session_doc = mock_db.chat_sessions.insert_one.call_args[0][0]
+            assert _is_aware_utc(session_doc["created_at"]) and _is_aware_utc(session_doc["updated_at"])
+
+    def test_no_naive_now_or_utcnow_in_backend_source(self):
+        # Guard against regressions: naive datetimes are local time on any
+        # non-UTC machine and serialize without an offset.
+        import pathlib, re
+        root = pathlib.Path(__file__).resolve().parents[1]
+        pattern = re.compile(r"datetime\.(utcnow\(|now\(\))")
+        offenders = [
+            f"{p.relative_to(root)}:{i}"
+            for p in root.rglob("*.py")
+            if "venv" not in p.parts and "tests" not in p.parts
+            for i, line in enumerate(p.read_text().splitlines(), 1)
+            if pattern.search(line)
+        ]
+        assert offenders == []
+
+    async def test_mongo_client_is_tz_aware(self):
+        from datetime import timezone
+        from backend.database import Database
+        with patch("backend.database.AsyncIOMotorClient") as client_cls:
+            client_cls.return_value.admin.command = AsyncMock(return_value={"ok": 1})
+            await Database.connect("mongodb://localhost:27017/ragdb?ssl=false")
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs["tz_aware"] is True and kwargs["tzinfo"] == timezone.utc
+
+
+class TestCurrentUserPayload:
+    async def test_only_user_id_is_exposed(self):
+        from fastapi.security import HTTPAuthorizationCredentials
+        from backend.auth.dependencies import get_current_user, get_optional_user
+        from backend.auth.jwt import create_access_token
+        creds = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=create_access_token({"sub": "abc123", "username": "u"}))
+        assert await get_current_user(creds) == {"user_id": "abc123"}
+        assert await get_optional_user(creds) == {"user_id": "abc123"}

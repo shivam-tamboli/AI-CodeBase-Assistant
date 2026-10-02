@@ -9,7 +9,7 @@ Phase 13: Added JWT authentication and authorization
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 import zipfile
 import base64
@@ -105,14 +105,14 @@ async def _run_ingestion(
             {"$set": {
                 "status": final_status,
                 "processing": result,
-                "updated_at": datetime.now(),
+                "updated_at": datetime.now(timezone.utc),
             }},
         )
     except Exception as exc:
         logger.error("Ingestion background task failed for %s: %s", repo_id, exc)
         await db.repositories.update_one(
             {"_id": ObjectId(repo_id)},
-            {"$set": {"status": "failed", "error": str(exc), "updated_at": datetime.now()}},
+            {"$set": {"status": "failed", "error": str(exc), "updated_at": datetime.now(timezone.utc)}},
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -218,7 +218,7 @@ async def create_repository(
         "name": repo.name,
         "description": repo.description,
         "user_id": user_id,
-        "created_at": datetime.now(),
+        "created_at": datetime.now(timezone.utc),
         "updated_at": None
     }
 
@@ -274,7 +274,7 @@ async def upload_repository(
             "description": description or "",
             "user_id": user_id,
             "status": "pending",
-            "created_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
             "updated_at": None,
         }
 
@@ -354,7 +354,7 @@ async def reindex_repository(
 
         await db.repositories.update_one(
             {"_id": ObjectId(repo_id)},
-            {"$set": {"status": "pending", "updated_at": datetime.now()}},
+            {"$set": {"status": "pending", "updated_at": datetime.now(timezone.utc)}},
         )
 
         background_tasks.add_task(
@@ -421,7 +421,7 @@ async def update_repository(
             detail="You do not have access to update this repository"
         )
 
-    update_data = {"updated_at": datetime.now()}
+    update_data = {"updated_at": datetime.now(timezone.utc)}
 
     if repo_update.name is not None:
         update_data["name"] = repo_update.name
@@ -793,7 +793,7 @@ async def import_repository(
             "user_id": user_id,
             "source_url": url,
             "status": "pending",
-            "created_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
             "updated_at": None,
         }
 

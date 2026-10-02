@@ -9,7 +9,7 @@ Phase 13: Production Ready
 from fastapi import APIRouter, HTTPException, status, Request, Response, Cookie
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import os
 from backend.database import Database
@@ -102,7 +102,7 @@ async def register(request: Request, body: RegisterRequest, response: Response):
         result = await db.users.insert_one({
             "username": body.username,
             "password": hashed_password,
-            "created_at": datetime.now()
+            "created_at": datetime.now(timezone.utc)
         })
     except DuplicateKeyError:
         # Lost a race with a concurrent register for the same name; the
@@ -116,7 +116,7 @@ async def register(request: Request, body: RegisterRequest, response: Response):
     await db.refresh_tokens.insert_one({
         "token": refresh_token,
         "user_id": user_id,
-        "expires_at": datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     })
 
     _set_refresh_cookie(response, refresh_token)
@@ -142,7 +142,7 @@ async def login(request: Request, body: LoginRequest, response: Response):
     await db.refresh_tokens.insert_one({
         "token": refresh_token,
         "user_id": user_id,
-        "expires_at": datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     })
 
     _set_refresh_cookie(response, refresh_token)
