@@ -11,22 +11,31 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 from functools import wraps
+import ipaddress
 
 def client_ip(request: Request) -> str:
-    """Rate-limit key: the real client address, even behind Render's proxy.
+    """Rate-limit key: the real visitor address, even behind Render's proxy chain.
 
-    request.client.host is the proxy's address in production (uvicorn only
-    trusts forwarded headers from 127.0.0.1), which would make every limit
-    global. Render appends the connecting client's IP to X-Forwarded-For and
-    keeps whatever the client sent, so the rightmost entry is the trustworthy
-    one — the leftmost can be spoofed.
+    On Render the TCP peer is an internal 10.x proxy and X-Forwarded-For ends
+    with a Cloudflare edge address that changes per request, so neither one
+    identifies the client. Cloudflare puts the visitor's address in
+    CF-Connecting-IP and overwrites any value the client sends. The header is
+    only trusted when the peer is private/loopback, i.e. the request came
+    through that internal proxy; anything else falls back to the peer address.
+
+    Don't start uvicorn with --forwarded-allow-ips='*': it would replace the
+    peer with the X-Forwarded-For edge address, which is public, and this
+    would fall back to a per-request key again.
     """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        last = forwarded.split(",")[-1].strip()
-        if last:
-            return last
-    return get_remote_address(request)
+    peer = get_remote_address(request)
+    cf_ip = request.headers.get("cf-connecting-ip", "").strip()
+    if cf_ip:
+        try:
+            if ipaddress.ip_address(peer).is_private:
+                return cf_ip
+        except ValueError:
+            pass
+    return peer
 
 
 limiter = Limiter(key_func=client_ip)

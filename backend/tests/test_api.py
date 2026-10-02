@@ -162,24 +162,27 @@ class TestLogin:
 # ---------------------------------------------------------------------------
 
 class TestAuthRateLimit:
-    async def _login(self, client, xff=None):
-        headers = {"X-Forwarded-For": xff} if xff else {}
+    # Mirrors production: the peer is Render's internal proxy (loopback here),
+    # X-Forwarded-For ends with a Cloudflare edge IP that changes per request,
+    # and CF-Connecting-IP carries the real visitor address.
+    async def _login(self, client, visitor, edge="104.16.0.1"):
+        headers = {"CF-Connecting-IP": visitor, "X-Forwarded-For": f"{visitor}, {edge}"}
         return await client.post("/auth/login", headers=headers,
                                  json={"username": "ghost", "password": "whatever"})
 
     async def test_sixth_login_in_a_minute_is_429(self, test_client, mock_db):
         mock_db.users.find_one.return_value = None
-        codes = [(await self._login(test_client, "203.0.113.7")).status_code for _ in range(6)]
+        codes = [(await self._login(test_client, "203.0.113.7", edge=f"104.16.0.{i}")).status_code
+                 for i in range(6)]
         assert codes == [401] * 5 + [429]
 
-    async def test_spoofed_leftmost_forwarded_for_does_not_reset_limit(self, test_client, mock_db):
-        # Render appends the real client IP; whatever the client put first is ignored.
+    async def test_spoofed_forwarded_for_does_not_reset_limit(self, test_client, mock_db):
         mock_db.users.find_one.return_value = None
-        codes = [
-            (await self._login(test_client, f"10.0.0.{i}, 203.0.113.7")).status_code
-            for i in range(6)
-        ]
-        assert codes[-1] == 429
+        for i in range(6):
+            r = await test_client.post("/auth/login", json={"username": "ghost", "password": "whatever"},
+                                       headers={"CF-Connecting-IP": "203.0.113.7",
+                                                "X-Forwarded-For": f"10.0.0.{i}, 172.16.0.{i}"})
+        assert r.status_code == 429
 
     async def test_different_clients_have_separate_buckets(self, test_client, mock_db):
         mock_db.users.find_one.return_value = None
@@ -190,11 +193,35 @@ class TestAuthRateLimit:
     async def test_register_is_rate_limited_too(self, test_client, mock_db):
         mock_db.users.find_one.return_value = _fake_user_doc("taken")
         codes = [
-            (await test_client.post("/auth/register", headers={"X-Forwarded-For": "203.0.113.8"},
+            (await test_client.post("/auth/register", headers={"CF-Connecting-IP": "203.0.113.8"},
                                     json={"username": "taken", "password": "password123"})).status_code
             for _ in range(6)
         ]
         assert codes == [400] * 5 + [429]
+
+
+class TestClientIpKey:
+    @staticmethod
+    def _request(peer, headers=None):
+        from starlette.requests import Request
+        return Request({
+            "type": "http",
+            "client": (peer, 1234),
+            "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+        })
+
+    def test_trusts_cf_header_from_internal_proxy(self):
+        from backend.middleware.rate_limiter import client_ip
+        assert client_ip(self._request("10.1.2.3", {"CF-Connecting-IP": "203.0.113.7"})) == "203.0.113.7"
+
+    def test_ignores_cf_header_from_public_peer(self):
+        # Someone talking to the app directly can't pick their own bucket.
+        from backend.middleware.rate_limiter import client_ip
+        assert client_ip(self._request("8.8.8.8", {"CF-Connecting-IP": "1.1.1.1"})) == "8.8.8.8"
+
+    def test_ignores_forwarded_for(self):
+        from backend.middleware.rate_limiter import client_ip
+        assert client_ip(self._request("10.1.2.3", {"X-Forwarded-For": "1.1.1.1, 2.2.2.2"})) == "10.1.2.3"
 
 
 # ---------------------------------------------------------------------------
