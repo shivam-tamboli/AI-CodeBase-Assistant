@@ -95,7 +95,9 @@ def root():
     return {"message": "API is running"}
 
 
-@app.get("/health")
+# HEAD too: uptime monitors (e.g. Uptime Robot's free HTTP checks) send HEAD,
+# which a GET-only route answers with 405.
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     """Health check for monitoring"""
     try:

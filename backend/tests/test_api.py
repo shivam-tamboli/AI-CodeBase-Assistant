@@ -61,6 +61,13 @@ class TestRootEndpoints:
         assert "status" in data
         assert "database" in data
 
+    async def test_health_accepts_head(self, test_client):
+        # Uptime monitors send HEAD; it must not be a 405.
+        with patch("backend.database.Database.client") as mock_client:
+            mock_client.admin.command = AsyncMock(return_value={"ok": 1})
+            r = await test_client.head("/health")
+        assert r.status_code == 200
+
 
 # ---------------------------------------------------------------------------
 # Auth — Register
