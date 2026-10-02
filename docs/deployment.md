@@ -185,7 +185,6 @@ Full reference of all supported environment variables. See [`backend/.env.exampl
 | `EMBEDDING_MODEL` | No | `text-embedding-3-small` | Embedding model |
 | `ANTHROPIC_API_KEY` | No | — | Required when `LLM_PROVIDER=anthropic` |
 | `COHERE_API_KEY` | No | — | Enables Cohere cross-encoder re-ranking |
-| `GITHUB_TOKEN` | No | — | GitHub personal access token for private repo import |
 | `ENABLE_CHUNK_SUMMARIES` | No | `false` | Generate LLM summaries per chunk at index time |
 | `ENVIRONMENT` | No | `development` | Set to `production` on Render — makes the refresh-token cookie `secure` and `samesite=none` so it works cross-origin |
 

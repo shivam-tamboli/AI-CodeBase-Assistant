@@ -233,3 +233,88 @@ class TestAuthEdgeCases:
     async def test_no_auth_header_rejected(self, test_client):
         r = await test_client.get("/repositories")
         assert r.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# GitHub import — credentials
+# ---------------------------------------------------------------------------
+
+SERVER_TOKEN = "ghp_SERVERTOKENshouldNEVERbeUSED0000000000"
+USER_TOKEN = "ghp_userSuppliedToken1234567890abcdefgh"
+
+
+def _fake_clone(returncode=0, stderr=b""):
+    """Stand-in for asyncio.create_subprocess_exec that records the call."""
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append({"args": args, "env": kwargs.get("env") or {}})
+        proc = MagicMock()
+        proc.returncode = returncode
+        proc.communicate = AsyncMock(return_value=(b"", stderr))
+        return proc
+
+    return fake_exec, calls
+
+
+class TestGitHubImportCredentials:
+    @pytest.fixture(autouse=True)
+    def _isolate(self, monkeypatch):
+        from backend.middleware.rate_limiter import limiter
+        from backend.main import app
+        limiter.reset()
+        monkeypatch.setenv("GITHUB_TOKEN", SERVER_TOKEN)
+        # ASGITransport skips lifespan, so the shared processor isn't created.
+        monkeypatch.setattr(app.state, "processor", MagicMock(), raising=False)
+        with patch("backend.api.repositories._run_ingestion", new_callable=AsyncMock):
+            yield
+
+    async def test_server_token_never_reaches_git(self, test_client, auth_headers):
+        fake_exec, calls = _fake_clone()
+        with patch("backend.api.repositories.asyncio.create_subprocess_exec", fake_exec):
+            r = await test_client.post("/repositories/import", headers=auth_headers,
+                                       json={"url": "https://github.com/octocat/Hello-World"})
+        assert r.status_code == 202
+        (call,) = calls
+        assert not any(SERVER_TOKEN in str(a) for a in call["args"])
+        env_without_inherited = {k: v for k, v in call["env"].items() if k.startswith("GIT_")}
+        assert SERVER_TOKEN not in str(env_without_inherited)
+        assert "https://github.com/octocat/Hello-World" in call["args"]
+        # credential helpers are reset, so the host can't authenticate the clone either
+        assert call["env"]["GIT_CONFIG_KEY_0"] == "credential.helper"
+        assert call["env"]["GIT_CONFIG_VALUE_0"] == ""
+        assert call["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+    async def test_user_token_sent_as_header_not_in_argv(self, test_client, mock_db, auth_headers):
+        fake_exec, calls = _fake_clone()
+        with patch("backend.api.repositories.asyncio.create_subprocess_exec", fake_exec):
+            r = await test_client.post("/repositories/import", headers=auth_headers, json={
+                "url": "https://github.com/me/private-repo", "github_token": USER_TOKEN,
+            })
+        assert r.status_code == 202
+        (call,) = calls
+        assert not any(USER_TOKEN in str(a) for a in call["args"])
+        assert call["env"]["GIT_CONFIG_KEY_1"] == "http.https://github.com/.extraheader"
+        assert call["env"]["GIT_CONFIG_VALUE_1"].startswith("Authorization: Basic ")
+        assert USER_TOKEN not in r.text
+        stored = mock_db.repositories.insert_one.call_args[0][0]
+        assert USER_TOKEN not in str(stored)
+
+    async def test_private_repo_without_token_explains_why(self, test_client, auth_headers):
+        fake_exec, _ = _fake_clone(
+            returncode=128,
+            stderr=b"fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+        )
+        with patch("backend.api.repositories.asyncio.create_subprocess_exec", fake_exec):
+            r = await test_client.post("/repositories/import", headers=auth_headers,
+                                       json={"url": "https://github.com/me/private-repo"})
+        assert r.status_code == 422
+        assert "provide your own GitHub access token" in r.json()["detail"]
+
+    async def test_malformed_token_rejected_without_echoing_it(self, test_client, auth_headers):
+        bad = "ghp_abcdefghijklmnopqrstuvwxyz\r\nX-Injected: 1"
+        r = await test_client.post("/repositories/import", headers=auth_headers, json={
+            "url": "https://github.com/me/private-repo", "github_token": bad,
+        })
+        assert r.status_code == 422
+        assert "X-Injected" not in r.text

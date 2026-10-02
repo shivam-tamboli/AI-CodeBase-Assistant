@@ -516,6 +516,7 @@ function App() {
 
   // GitHub import state
   const [githubUrl, setGithubUrl] = useState('')
+  const [githubToken, setGithubToken] = useState('')
   const [importLoading, setImportLoading] = useState(false)
   const [importStatus, setImportStatus] = useState(null)
 
@@ -758,18 +759,20 @@ function App() {
     try {
       const res = await axios.post(
         `${API_URL}/repositories/import`,
-        { url: githubUrl.trim() },
+        // Token is only sent when the user supplies one (private repos); it's never stored.
+        { url: githubUrl.trim(), ...(githubToken.trim() && { github_token: githubToken.trim() }) },
         { headers: { Authorization: `Bearer ${token}` } }
       )
       const repoId = res.data.id
       setGithubUrl('')
+      setGithubToken('')
       setImportStatus({ type: 'loading', text: 'Indexing code...' })
       // Show repo in dropdown immediately and auto-select it
       await fetchRepositories(token)
       setSelectedRepo(repoId)
       pollRepoStatus(repoId, setImportStatus, token)
     } catch (err) {
-      setImportStatus({ type: 'error', text: 'Import failed: ' + (err.response?.data?.detail || err.message) })
+      setImportStatus({ type: 'error', text: 'Import failed: ' + (err.response?.data?.detail || err.response?.data?.error?.message || err.message) })
       setTimeout(() => setImportStatus(null), 6000)
     } finally {
       setImportLoading(false)
@@ -1217,6 +1220,15 @@ function App() {
                 value={githubUrl}
                 onChange={(e) => setGithubUrl(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleGitHubImport()}
+              />
+              <input
+                className="text-input"
+                type="password"
+                placeholder="Access token (private repos only)"
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleGitHubImport()}
+                autoComplete="off"
               />
               <button
                 className="btn btn-primary btn-full"

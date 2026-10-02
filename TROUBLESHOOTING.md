@@ -16,7 +16,6 @@ Complete reference for diagnosing and fixing common failures in the AI Codebase 
 | `JWT_SECRET` | **Yes** | Generate: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 | `ANTHROPIC_API_KEY` | Only if `LLM_PROVIDER=anthropic` | https://console.anthropic.com |
 | `COHERE_API_KEY` | No (enables better re-ranking) | https://cohere.com (free tier: 1000 req/month) |
-| `GITHUB_TOKEN` | No (enables private repo import) | https://github.com/settings/tokens → scope: `repo` (read-only) |
 
 ---
 
