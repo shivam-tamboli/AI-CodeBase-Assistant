@@ -19,7 +19,7 @@ Point it at a GitHub repo (or upload a ZIP) and ask questions about the code in 
 2. Click **Try a demo repo**. It loads [`pallets/itsdangerous`](https://github.com/pallets/itsdangerous), which is already indexed.
 3. Click one of the suggested questions, or ask your own.
 
-**The first request can take 50–60 seconds.** The backend runs on Render's free tier, which sleeps after 15 minutes without traffic. The login page pings the server as soon as it loads, so it's usually awake by the time you've typed your details. After that, things are quick.
+The backend runs on Render's free tier, which puts the server to sleep after 15 minutes without traffic. Waking it up takes 50–60 seconds. Uptime Robot hits `/health` every 5 minutes so it doesn't fall asleep in the first place. If it ever does (a redeploy, a missed ping), the login page pings the server as soon as it loads. Most of the wake-up then happens while you're typing your details.
 
 ## Why I built it
 
@@ -35,6 +35,8 @@ Reading an unfamiliar codebase is slow. You open files, follow imports and grep 
 - **Has a shared demo repo** that every user can read and nobody can change.
 
 The security and reliability work is listed under [Recent changes](#recent-changes).
+
+<a id="architecture"></a>
 
 ## How it works
 
@@ -78,7 +80,9 @@ More detail: [ARCHITECTURE.md](ARCHITECTURE.md), [docs/search-pipeline.md](docs/
 | Parsing | Python `ast`, tree-sitter for the other AST languages |
 | Auth | JWT access tokens (15 min), plus refresh tokens in an httpOnly cookie |
 | Frontend | React 19 + Vite. Split into `Auth`, `Sidebar` and `Chat` components; `api.js` holds every API call and adds the auth header in one place |
-| Hosting | Render (backend), Vercel (frontend), GitHub Actions running the test suite on every PR |
+| Hosting | Render free tier (backend), Vercel (frontend), Uptime Robot to keep Render awake, GitHub Actions running the tests on every PR |
+
+<a id="quick-start"></a>
 
 ## Running it locally
 
@@ -216,6 +220,12 @@ The step-by-step guide is in [docs/deployment.md](docs/deployment.md). In short:
   - Set `OPENAI_API_KEY`, `MONGODB_URI`, `JWT_SECRET`, `ALLOWED_ORIGINS` (your Vercel URL) and `ENVIRONMENT=production`.
 - **Vercel (frontend):** root directory `frontend`, with `VITE_API_URL` set to your Render URL.
 - **Atlas vector index (optional but faster):** create a vector search index called `vector_search_index` on `ragdb.chunks`, with 1536 dimensions, cosine similarity, and a filter on `repository_id`. Without it, search still works using in-memory cosine similarity.
+- **Uptime Robot (keeps the free Render instance awake):**
+  - Add a monitor for `https://<your-app>.onrender.com/health`, checked every 5 minutes.
+  - Make it a **Keyword** monitor that looks for `healthy`, not a plain HTTP monitor. Plain HTTP monitors send `HEAD` requests on the free plan, and `/health` only answers `GET`. A `HEAD` returns 405, so the monitor would report the site as down even while the pings keep it awake. Keyword monitors use `GET`.
+  - Render gives 750 free instance hours a month, which covers one service running all month. A second always-on free service would run out.
+
+Once it's live, `GET /health` should return `{"status": "healthy", "database": "connected"}`.
 
 ## Recent changes
 
@@ -248,7 +258,7 @@ Each of these went through an issue and a PR with tests:
 
 ## Limitations and next steps
 
-- **Cold starts** on the free tier (about a minute) are the main rough edge. A paid instance or a scheduled keep-alive would remove them.
+- **The free Render instance can still go cold.** Uptime Robot stops the 15-minute sleep, but a redeploy or restart still costs about a minute on the first request. A paid instance is the real fix.
 - **Retrieval is per repo**, five chunks at a time. Broad "explain the whole architecture" questions get decent answers, not great ones.
 - **Private repos** need a personal access token pasted on each import. GitHub OAuth would be nicer.
 - **Re-indexing is manual.** A GitHub webhook could do it on every push.
