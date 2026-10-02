@@ -4,7 +4,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104-009688?logo=fastapi&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
-![Tests](https://img.shields.io/badge/tests-98_passing-4CAF50)
+![Tests](https://img.shields.io/badge/tests-99_passing-4CAF50)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 Point it at a GitHub repo (or upload a ZIP) and ask questions about the code in plain English. Answers stream in as they're written, and each one lists the files and line ranges it was built from.
@@ -162,7 +162,7 @@ There's no server-side GitHub token. Public repos are cloned anonymously, and pr
 python -m pytest backend/tests -q
 ```
 
-98 tests, with MongoDB, OpenAI and git mocked, so nothing external is needed. CI runs them on every pull request.
+99 tests, with MongoDB, OpenAI and git mocked, so nothing external is needed. CI runs them on every pull request.
 
 - `test_unit.py`: JWT handling, the chunker (including the overlap regression), RRF, the BM25 fallback fusion, overlap dedupe, and choosing the Cohere client.
 - `test_api.py`: auth, validation and rate limits; upload limits and path traversal; repo ownership; the demo repo being read-only; chat refusing other users' repos; GitHub tokens never leaking; timestamps being timezone-aware.
@@ -221,8 +221,8 @@ The step-by-step guide is in [docs/deployment.md](docs/deployment.md). In short:
 - **Vercel (frontend):** root directory `frontend`, with `VITE_API_URL` set to your Render URL.
 - **Atlas vector index (optional but faster):** create a vector search index called `vector_search_index` on `ragdb.chunks`, with 1536 dimensions, cosine similarity, and a filter on `repository_id`. Without it, search still works using in-memory cosine similarity.
 - **Uptime Robot (keeps the free Render instance awake):**
-  - Add a monitor for `https://<your-app>.onrender.com/health`, checked every 5 minutes.
-  - Make it a **Keyword** monitor that looks for `healthy`, not a plain HTTP monitor. Plain HTTP monitors send `HEAD` requests on the free plan, and `/health` only answers `GET`. A `HEAD` returns 405, so the monitor would report the site as down even while the pings keep it awake. Keyword monitors use `GET`.
+  - Add an HTTP(s) monitor for `https://<your-app>.onrender.com/health`, checked every 5 minutes. `/health` answers both `GET` and `HEAD`, and free HTTP monitors send `HEAD`.
+  - That's enough to keep the server awake. One catch: `/health` returns 200 even when the database is down, and only says so in the body. If you also want an alert for that, use a Keyword monitor (which sends `GET`) looking for `"status":"healthy"`. Don't use plain `healthy` as the keyword, because it also matches `unhealthy`.
   - Render gives 750 free instance hours a month, which covers one service running all month. A second always-on free service would run out.
 
 Once it's live, `GET /health` should return `{"status": "healthy", "database": "connected"}`.
