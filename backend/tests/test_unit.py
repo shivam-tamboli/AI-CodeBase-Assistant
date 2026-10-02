@@ -260,3 +260,57 @@ class TestDropOverlapping:
         ranked = [_hit("m.py", 24, 45, name="escape", chunk_type="function"),
                   _hit("m.py", 1, 50, name="__init__", chunk_type="imports")]
         assert len(self.drop(ranked, limit=5)) == 2
+
+
+# ---------------------------------------------------------------------------
+# Fallback rerank keeps the semantic ranking in play
+# ---------------------------------------------------------------------------
+
+class TestBm25FallbackFusion:
+    def setup_method(self):
+        from backend.services.hybrid_search import HybridSearchService
+        self.svc = HybridSearchService.__new__(HybridSearchService)
+        self.svc.k = 60
+
+    def test_top_semantic_hit_without_shared_words_survives(self):
+        # Ranked #1 by RRF (semantic), shares no words with the question.
+        semantic_best = {"content": "if age > max_age: raise SignatureExpired(...)", "metadata": {"name": "unsign"}}
+        wordy = [{"content": "signature token verification signature token " * (i + 1), "metadata": {"name": f"w{i}"}} for i in range(10)]
+        out = self.svc._bm25_rerank([semantic_best] + wordy, "how does signature verification work when a token has expired")
+        assert semantic_best in out[:5]
+
+    def test_lexical_match_can_still_move_up(self):
+        docs = [{"content": f"unrelated text {i}", "metadata": {"name": f"u{i}"}} for i in range(5)]
+        target = {"content": "escape characters html escape", "metadata": {"name": "escape"}}
+        out = self.svc._bm25_rerank(docs + [target], "escape html characters")
+        assert out.index(target) < 5  # started last (index 5), BM25 lifts it
+
+
+class TestCohereClientSelection:
+    async def _rerank_with(self, fake_module):
+        import sys
+        from unittest.mock import AsyncMock, MagicMock
+        from backend.services.hybrid_search import HybridSearchService
+        svc = HybridSearchService.__new__(HybridSearchService)
+        client = MagicMock()
+        client.rerank = AsyncMock(return_value=MagicMock(results=[MagicMock(index=1, relevance_score=0.9)]))
+        fake_module.return_value_client = client
+        with patch.dict(sys.modules, {"cohere": fake_module}), patch.dict("os.environ", {"COHERE_API_KEY": "k"}):
+            return await svc._cohere_rerank([{"content": "a"}, {"content": "b"}], "q", 5)
+
+    @pytest.mark.asyncio
+    async def test_uses_v2_client_when_available(self):
+        import types
+        mod = types.SimpleNamespace()
+        mod.AsyncClientV2 = lambda key: mod.return_value_client
+        mod.AsyncClient = lambda key: (_ for _ in ()).throw(AssertionError("v1 used"))
+        out = await self._rerank_with(mod)
+        assert out[0]["content"] == "b" and out[0]["rerank_score"] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_v1_client_on_older_sdk(self):
+        import types
+        mod = types.SimpleNamespace()
+        mod.AsyncClient = lambda key: mod.return_value_client  # no AsyncClientV2 attribute
+        out = await self._rerank_with(mod)
+        assert out[0]["content"] == "b"
