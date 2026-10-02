@@ -162,7 +162,10 @@ class HybridSearchService:
             raise ValueError("COHERE_API_KEY not configured")
 
         import cohere
-        co = cohere.AsyncClientV2(api_key)
+        # AsyncClientV2 only exists in newer 5.x SDKs; older ones have the v1
+        # AsyncClient with the same rerank() call and result shape.
+        client_cls = getattr(cohere, "AsyncClientV2", None) or cohere.AsyncClient
+        co = client_cls(api_key)
 
         docs = [r.get("content", "") for r in results]
         top_n = min(limit, len(docs))
@@ -219,9 +222,10 @@ class HybridSearchService:
     def _bm25_rerank(self, results: List[Dict], query: str) -> List[Dict]:
         """Re-rank RRF results using in-process BM25 (Okapi BM25).
 
-        BM25 correctly normalises for document length and term frequency,
-        replacing the previous ad-hoc term-count heuristic. Used when
-        COHERE_API_KEY is not configured.
+        BM25 correctly normalises for document length and term frequency.
+        Used when Cohere is unavailable. The BM25 order is fused with the
+        incoming RRF order (reciprocal rank), so it can promote lexical
+        matches without burying semantic ones.
         """
         if not results:
             return results
@@ -240,10 +244,17 @@ class HybridSearchService:
         query_tokens = query.lower().split()
         scores = BM25Okapi(corpus).get_scores(query_tokens)
 
+        # Fuse with the incoming (RRF) order instead of replacing it. Sorting
+        # by BM25 alone threw away the semantic ranking, so code that matched
+        # by meaning but not by words ("expired" vs max_age) never made it in.
+        bm25_rank = {
+            i: r for r, i in enumerate(sorted(range(len(results)), key=lambda i: scores[i], reverse=True))
+        }
         for i, doc in enumerate(results):
-            doc["hybrid_score"] = float(scores[i])
+            doc["bm25_score"] = float(scores[i])
+            doc["hybrid_score"] = 1.0 / (self.k + i) + 1.0 / (self.k + bm25_rank[i])
 
-        return sorted(results, key=lambda x: x.get("hybrid_score", 0), reverse=True)
+        return sorted(results, key=lambda x: x["hybrid_score"], reverse=True)
     
     async def search_with_filters(
         self,
