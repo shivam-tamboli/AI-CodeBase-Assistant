@@ -114,6 +114,9 @@ export const pingHealth = () => fetch(`${API_URL}/health`).catch(() => {})
 
 export const listRepositories = () => api.get('/repositories').then(r => r.data)
 
+// The shared, read-only demo repo (404 if disabled or not created yet).
+export const getDemoRepository = () => api.get('/repositories/demo').then(r => r.data)
+
 export const getRepositoryStatus = (repoId) =>
   api.get(`/repositories/${repoId}/status`).then(r => r.data)
 

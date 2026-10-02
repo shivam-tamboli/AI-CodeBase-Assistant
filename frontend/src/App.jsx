@@ -12,6 +12,8 @@ function App() {
   // Repository state
   const [repositories, setRepositories] = useState([])
   const [selectedRepo, setSelectedRepo] = useState('')
+  const [demoRepo, setDemoRepo] = useState(null)
+  const [demoLoading, setDemoLoading] = useState(false)
 
   // Session state — shared by Sidebar (list) and Chat (messages)
   const [sessions, setSessions] = useState([])
@@ -61,6 +63,7 @@ function App() {
     setActiveSessionId(null)
     setChatHistory([])
     setSelectedRepo('')
+    setDemoRepo(null)
   }
 
   // Silent token refresh on 401; if the refresh cookie is gone too, sign out.
@@ -93,6 +96,27 @@ function App() {
     try { await api.logout() } catch {}
     api.clearSession()
     resetWorkspace()
+  }
+
+  // Shared demo repo: lets people try the app without importing anything.
+  const tryDemo = async () => {
+    setDemoLoading(true)
+    try {
+      const demo = await api.getDemoRepository()
+      if (demo.status !== 'indexed') {
+        showToast('The demo repo is still being prepared — try again in a minute', 'info')
+        return
+      }
+      setDemoRepo(demo)
+      setSelectedRepo(demo.id)
+      setSidebarOpen(false)
+    } catch (err) {
+      showToast(err.response?.status === 404
+        ? "The demo repo isn't available right now"
+        : 'Could not load the demo: ' + api.apiError(err), 'error')
+    } finally {
+      setDemoLoading(false)
+    }
   }
 
   // ── Sessions ──────────────────────────────────────────────────────────────
@@ -166,7 +190,11 @@ function App() {
     )
   }
 
-  const activeRepo = repositories.find(r => r.id === selectedRepo)
+  // The demo isn't one of the user's own repos, so it's appended once loaded.
+  const allRepos = demoRepo && !repositories.some(r => r.id === demoRepo.id)
+    ? [...repositories, demoRepo]
+    : repositories
+  const activeRepo = allRepos.find(r => r.id === selectedRepo)
 
   return (
     <div className="app">
@@ -211,7 +239,7 @@ function App() {
       <main className="main-layout">
         <Sidebar
           sidebarOpen={sidebarOpen}
-          repositories={repositories}
+          repositories={allRepos}
           selectedRepo={selectedRepo}
           activeRepo={activeRepo}
           onSelectRepo={setSelectedRepo}
@@ -232,6 +260,8 @@ function App() {
           setActiveSessionId={setActiveSessionId}
           refreshSessions={() => fetchSessions(selectedRepo)}
           showToast={showToast}
+          onTryDemo={tryDemo}
+          demoLoading={demoLoading}
         />
       </main>
     </div>

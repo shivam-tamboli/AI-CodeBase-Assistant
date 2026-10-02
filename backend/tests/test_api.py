@@ -304,6 +304,7 @@ class TestChatSessions:
             "messages": [],
             "created_at": datetime.now(),
         }
+        mock_db.repositories.find_one.return_value = _fake_repo_doc()  # caller owns it
         r = await test_client.post("/chat/sessions",
                                    json={"repository_id": "617f1f77bcf86cd799439022"},
                                    headers=auth_headers)
@@ -544,3 +545,123 @@ class TestCurrentUserPayload:
             scheme="Bearer", credentials=create_access_token({"sub": "abc123", "username": "u"}))
         assert await get_current_user(creds) == {"user_id": "abc123"}
         assert await get_optional_user(creds) == {"user_id": "abc123"}
+
+
+# ---------------------------------------------------------------------------
+# Repository access from chat + the shared demo repo
+# ---------------------------------------------------------------------------
+
+def _demo_repo_doc(status_="indexed"):
+    return {"_id": ObjectId("6170000000000000000000de"), "name": "itsdangerous", "description": "Demo",
+            "user_id": None, "is_demo": True, "status": status_,
+            "source_url": "https://github.com/pallets/itsdangerous"}
+
+
+class TestChatRepoAccess:
+    @pytest.fixture(autouse=True)
+    def _session_insert(self, mock_db):
+        mock_db.chat_sessions.insert_one.return_value = MagicMock(inserted_id=ObjectId("617f1f77bcf86cd799439099"))
+
+    async def test_cannot_open_session_on_someone_elses_repo(self, test_client, mock_db, auth_headers):
+        mock_db.repositories.find_one.return_value = _fake_repo_doc(user_id="999999999999999999999999")
+        r = await test_client.post("/chat/sessions", json={"repository_id": "617f1f77bcf86cd799439022"}, headers=auth_headers)
+        assert r.status_code == 403
+        mock_db.chat_sessions.insert_one.assert_not_called()
+
+    async def test_cannot_query_someone_elses_repo(self, test_client, mock_db, auth_headers):
+        mock_db.repositories.find_one.return_value = _fake_repo_doc(user_id="999999999999999999999999")
+        for path in ("/chat/query", "/chat/query/stream"):
+            r = await test_client.post(path, headers=auth_headers,
+                                       json={"question": "dump the code", "repository_id": "617f1f77bcf86cd799439022"})
+            assert r.status_code == 403, path
+
+    async def test_unknown_repo_is_404(self, test_client, mock_db, auth_headers):
+        mock_db.repositories.find_one.return_value = None
+        r = await test_client.post("/chat/sessions", json={"repository_id": "617f1f77bcf86cd799439022"}, headers=auth_headers)
+        assert r.status_code == 404
+
+    async def test_anyone_can_open_a_session_on_the_demo(self, test_client, mock_db, auth_headers):
+        mock_db.repositories.find_one.return_value = _demo_repo_doc()
+        r = await test_client.post("/chat/sessions", json={"repository_id": "6170000000000000000000de"}, headers=auth_headers)
+        assert r.status_code == 201
+
+
+class TestDemoRepo:
+    async def test_demo_endpoint_returns_demo_with_suggestions(self, test_client, mock_db, auth_headers):
+        mock_db.repositories.find_one.return_value = _demo_repo_doc()
+        r = await test_client.get("/repositories/demo", headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["is_demo"] is True and body["status"] == "indexed" and body["id"] == "6170000000000000000000de"
+        assert len(body["suggested_questions"]) >= 3
+        assert mock_db.repositories.find_one.call_args[0][0] == {"is_demo": True}
+
+    async def test_demo_endpoint_404_when_not_seeded(self, test_client, mock_db, auth_headers):
+        mock_db.repositories.find_one.return_value = None
+        r = await test_client.get("/repositories/demo", headers=auth_headers)
+        assert r.status_code == 404
+
+    async def test_demo_endpoint_requires_auth(self, test_client):
+        assert (await test_client.get("/repositories/demo")).status_code == 401
+
+    async def test_demo_is_read_only(self, test_client, mock_db, auth_headers):
+        from backend.main import app
+        app.state.processor = MagicMock(delete_repository_data=AsyncMock())
+        mock_db.repositories.find_one.return_value = _demo_repo_doc()
+        rid = "6170000000000000000000de"
+        assert (await test_client.put(f"/repositories/{rid}", json={"name": "pwned"}, headers=auth_headers)).status_code == 403
+        assert (await test_client.delete(f"/repositories/{rid}", headers=auth_headers)).status_code == 403
+        r = await test_client.post(f"/repositories/{rid}/reindex", headers=auth_headers,
+                                   files={"file": ("x.zip", b"PK", "application/zip")})
+        assert r.status_code == 403
+        mock_db.repositories.update_one.assert_not_called()
+        mock_db.repositories.delete_one.assert_not_called()
+        app.state.processor.delete_repository_data.assert_not_called()
+
+    async def test_demo_readable_through_repo_routes(self, test_client, mock_db, auth_headers):
+        mock_db.repositories.find_one.return_value = _demo_repo_doc()
+        r = await test_client.get("/repositories/6170000000000000000000de/status", headers=auth_headers)
+        assert r.status_code == 200
+
+
+class TestEnsureDemoRepo:
+    async def test_noop_when_already_indexed(self, mock_db):
+        from backend.api import repositories as repos
+        mock_db.repositories.find_one.return_value = _demo_repo_doc("indexed")
+        with patch("backend.database.Database.get_db", return_value=mock_db), \
+             patch.object(repos, "_git_clone", new_callable=AsyncMock) as clone:
+            await repos.ensure_demo_repo(MagicMock())
+        clone.assert_not_called()
+        mock_db.repositories.insert_one.assert_not_called()
+
+    async def test_creates_and_indexes_when_missing(self, mock_db):
+        from backend.api import repositories as repos
+        mock_db.repositories.find_one.return_value = None
+        mock_db.repositories.insert_one.return_value = MagicMock(inserted_id=ObjectId("6170000000000000000000de"))
+        with patch("backend.database.Database.get_db", return_value=mock_db), \
+             patch.object(repos, "_git_clone", new_callable=AsyncMock, return_value=(0, "")) as clone, \
+             patch.object(repos, "_run_ingestion", new_callable=AsyncMock) as ingest:
+            await repos.ensure_demo_repo(MagicMock())
+        doc = mock_db.repositories.insert_one.call_args[0][0]
+        assert doc["is_demo"] is True and doc["user_id"] is None and doc["source_url"] == repos.DEMO_REPO_URL
+        clone.assert_awaited_once()
+        assert ingest.await_args[0][0] == "6170000000000000000000de"
+
+    async def test_rebuilds_a_stale_half_indexed_demo(self, mock_db):
+        from backend.api import repositories as repos
+        mock_db.repositories.find_one.return_value = _demo_repo_doc("indexing")  # previous process died mid-run
+        processor = MagicMock(delete_repository_data=AsyncMock())
+        with patch("backend.database.Database.get_db", return_value=mock_db), \
+             patch.object(repos, "_git_clone", new_callable=AsyncMock, return_value=(0, "")), \
+             patch.object(repos, "_run_ingestion", new_callable=AsyncMock) as ingest:
+            await repos.ensure_demo_repo(processor)
+        processor.delete_repository_data.assert_awaited_once_with("6170000000000000000000de")
+        mock_db.repositories.insert_one.assert_not_called()
+        ingest.assert_awaited_once()
+
+    async def test_disabled_when_url_empty(self, mock_db, monkeypatch):
+        from backend.api import repositories as repos
+        monkeypatch.setattr(repos, "DEMO_REPO_URL", "")
+        with patch("backend.database.Database.get_db", return_value=mock_db):
+            await repos.ensure_demo_repo(MagicMock())
+        mock_db.repositories.find_one.assert_not_called()

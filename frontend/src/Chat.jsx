@@ -23,6 +23,8 @@ export default function Chat({
   setActiveSessionId,
   refreshSessions,
   showToast,
+  onTryDemo,
+  demoLoading,
 }) {
   const [question, setQuestion] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
@@ -36,6 +38,9 @@ export default function Chat({
 
   const repoStatus = activeRepo?.status
   const repoReady = repoStatus === 'indexed'
+  const isDemo = Boolean(activeRepo?.is_demo)
+  // The demo comes with questions written for that repo; others get generic ones.
+  const hints = isDemo && activeRepo.suggested_questions?.length ? activeRepo.suggested_questions : HINTS
 
   const askQuestion = async () => {
     if (!question.trim() || !selectedRepo) return
@@ -129,6 +134,10 @@ export default function Chat({
           </div>
           <h3>AI Codebase Assistant</h3>
           <p>Upload or import a repository, then interrogate it in plain English.</p>
+          <button className="btn btn-primary demo-cta" onClick={onTryDemo} disabled={demoLoading}>
+            {demoLoading ? 'Loading demo…' : 'Try a demo repo'}
+          </button>
+          <span className="demo-cta-sub">No setup — a small open-source repo that's already indexed</span>
           <div className="empty-state-features">
             <div className="feature-row">
               <span className="feature-row-icon">
@@ -174,6 +183,18 @@ export default function Chat({
         </div>
       ) : (
         <>
+          {isDemo && (
+            <div className="demo-banner">
+              <span className="demo-banner-tag">Demo</span>
+              Demo repo — ask anything about this codebase
+              {activeRepo.source_url && (
+                <a href={activeRepo.source_url} target="_blank" rel="noreferrer">
+                  {activeRepo.source_url.replace('https://github.com/', '')}
+                </a>
+              )}
+            </div>
+          )}
+
           {activeSessionId && (
             <div className="session-badge">
               <div className="badge-dot" />
@@ -198,7 +219,7 @@ export default function Chat({
                 <p>{repoReady ? 'Ask a question about your codebase' : 'Indexing in progress — questions available shortly'}</p>
                 {repoReady && (
                   <div className="empty-state-hints">
-                    {HINTS.map(hint => (
+                    {hints.map(hint => (
                       <span
                         key={hint}
                         className="hint-chip"

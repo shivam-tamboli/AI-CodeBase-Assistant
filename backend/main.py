@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
+import asyncio
 from contextlib import asynccontextmanager
 
 load_dotenv()
@@ -49,6 +50,11 @@ async def lifespan(app: FastAPI):
     app.state.rag_pipeline = RAGPipeline()
 
     print("Indexes and services initialized")
+
+    # Build the shared demo repo in the background if it isn't ready yet.
+    # Keep a reference so the task isn't garbage-collected mid-run.
+    from backend.api.repositories import ensure_demo_repo
+    app.state.demo_task = asyncio.create_task(ensure_demo_repo(app.state.processor))
 
     yield
 
