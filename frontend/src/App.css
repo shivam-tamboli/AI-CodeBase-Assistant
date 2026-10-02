@@ -68,12 +68,14 @@ header {
   top: 0;
   z-index: 100;
   backdrop-filter: blur(12px);
+  gap: 0.75rem;  /* keeps the brand and the user area from touching */
 }
 
 .header-brand {
   display: flex;
   align-items: center;
   gap: 0.625rem;
+  min-width: 0;  /* let the brand shrink instead of pushing the header past the screen */
 }
 
 .header-logo {
@@ -94,17 +96,25 @@ header {
   box-shadow: 0 0 20px rgba(0,245,255,0.5), inset 0 0 12px rgba(0,245,255,0.08);
 }
 
+.title-short { display: none; }
+
 header h1 {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .status-dot {
@@ -125,6 +135,11 @@ header h1 {
   font-size: 0.78rem;
   color: var(--text-secondary);
   font-weight: 500;
+  min-width: 0;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .logout-btn {
@@ -138,6 +153,8 @@ header h1 {
   font-weight: 500;
   transition: all 0.15s;
   font-family: inherit;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .logout-btn:hover {
@@ -2609,6 +2626,12 @@ header h1 {
 
 /* ── Phone and below (480px) ───────────────────────────────────────────────── */
 @media (max-width: 480px) {
+  /* Short title on phones; the full name stays in the h1 aria-label */
+  .title-full { display: none; }
+  .title-short { display: inline; }
+  /* On phones the short title keeps its space; the username takes the squeeze */
+  .header-brand { flex-shrink: 0; }
+  .username-label { max-width: none; }
 
   /* AUTH LEFT — even more compact */
   .auth-left {
@@ -2727,10 +2750,6 @@ header h1 {
     padding: 0.6rem;
   }
 
-  header h1 {
-    display: none;
-  }
-
   .chat-messages {
     padding: 0.75rem 0.625rem;
   }
@@ -2823,4 +2842,9 @@ header h1 {
   border-color: rgba(0,245,255,0.4);
   background: rgba(0,245,255,0.04);
   cursor: wait;
+}
+
+/* Very narrow phones: logo + user + logout only */
+@media (max-width: 339px) {
+  header h1 { display: none; }
 }
