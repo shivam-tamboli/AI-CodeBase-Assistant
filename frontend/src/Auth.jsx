@@ -16,7 +16,7 @@ function AuthStoryPanel() {
   const [explorerBadge, setExplorerBadge] = React.useState(null)
 
   const PHASE_DURATION = [5000, 6000, 5500, 4500]
-  const PHASES = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'API Usage']
+  const PHASES = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'REST API']
 
   const QUESTION_TEXT = 'How does authentication work?'
   const ANSWER_TEXT = 'Authentication uses JWT tokens. The AuthService validates credentials, generates a signed token, and attaches it to every request via middleware.'
@@ -122,7 +122,7 @@ function AuthStoryPanel() {
     }
   }, [phase])
 
-  const phaseLabels = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'API Usage']
+  const phaseLabels = ['RAG Pipeline', 'Live Query', 'Codebase Explorer', 'REST API']
 
   return (
     <div className="auth-story">
@@ -379,18 +379,17 @@ function AuthStoryPanel() {
               <div className="code-dot code-dot-amber" />
               <div className="code-dot code-dot-green" />
             </div>
-            <div className="code-line"><span className="code-ln">1</span><span className="c-purple">from</span><span className="c-white"> rag </span><span className="c-purple">import</span><span className="c-blue"> CodebaseAssistant</span></div>
-            <div className="code-line"><span className="code-ln">2</span><span className="c-muted">&nbsp;</span></div>
-            <div className="code-line"><span className="code-ln">3</span><span className="c-blue">assistant</span><span className="c-white"> = </span><span className="c-green">CodebaseAssistant</span><span className="c-white">(</span></div>
-            <div className="code-line"><span className="code-ln">4</span><span className="c-white">&nbsp;&nbsp;repo</span><span className="c-white">=</span><span className="c-amber">"your-project"</span><span className="c-white">,</span></div>
-            <div className="code-line"><span className="code-ln">5</span><span className="c-white">&nbsp;&nbsp;search</span><span className="c-white">=</span><span className="c-amber">"hybrid"</span><span className="c-white">,</span></div>
-            <div className="code-line"><span className="code-ln">6</span><span className="c-white">)</span></div>
-            <div className="code-line"><span className="code-ln">7</span><span className="c-muted">&nbsp;</span></div>
-            <div className="code-line"><span className="code-ln">8</span><span className="c-blue">result</span><span className="c-white"> = assistant.</span><span className="c-green">ask</span><span className="c-white">(</span></div>
-            <div className="code-line"><span className="code-ln">9</span><span className="c-white">&nbsp;&nbsp;</span><span className="c-amber">"How does auth work?"</span></div>
-            <div className="code-line"><span className="code-ln">10</span><span className="c-white">)</span></div>
-            <div className="code-line"><span className="code-ln">11</span><span className="c-muted">&nbsp;</span></div>
-            <div className="code-line"><span className="code-ln">12</span><span className="c-purple">print</span><span className="c-white">(result.</span><span className="c-pink">answer</span><span className="c-white">, result.</span><span className="c-pink">sources</span><span className="c-white">)</span><span className="code-cursor" /></div>
+            <div className="code-line"><span className="code-ln">1</span><span className="code-text"><span className="c-muted">{'# Import a public repo — indexing runs in the background'}</span></span></div>
+            <div className="code-line"><span className="code-ln">2</span><span className="code-text"><span className="c-purple">{'POST'}</span><span className="c-white">{' /repositories/import'}</span></span></div>
+            <div className="code-line"><span className="code-ln">3</span><span className="code-text"><span className="c-blue">{'Authorization: '}</span><span className="c-amber">{'Bearer <token>'}</span></span></div>
+            <div className="code-line"><span className="code-ln">4</span><span className="code-text"><span className="c-white">{'{"url": '}</span><span className="c-amber">{'"https://github.com/pallets/itsdangerous"'}</span><span className="c-white">{'}'}</span></span></div>
+            <div className="code-line"><span className="code-ln">5</span><span className="code-text"><span className="c-muted">{' '}</span></span></div>
+            <div className="code-line"><span className="code-ln">6</span><span className="code-text"><span className="c-muted">{'# Ask a question — the answer streams back as SSE'}</span></span></div>
+            <div className="code-line"><span className="code-ln">7</span><span className="code-text"><span className="c-purple">{'POST'}</span><span className="c-white">{' /chat/query/stream'}</span></span></div>
+            <div className="code-line"><span className="code-ln">8</span><span className="code-text"><span className="c-white">{'{"repository_id": '}</span><span className="c-amber">{'"<id>"'}</span><span className="c-white">{', "question": '}</span><span className="c-amber">{'"How are tokens signed?"'}</span><span className="c-white">{'}'}</span></span></div>
+            <div className="code-line"><span className="code-ln">9</span><span className="code-text"><span className="c-muted">{' '}</span></span></div>
+            <div className="code-line"><span className="code-ln">10</span><span className="code-text"><span className="c-green">{'data: '}</span><span className="c-white">{'{"type": "token", "answer": '}</span><span className="c-amber">{'"Tokens are signed by…"'}</span><span className="c-white">{'}'}</span></span></div>
+            <div className="code-line"><span className="code-ln">11</span><span className="code-text"><span className="c-green">{'data: '}</span><span className="c-white">{'{"type": "done", "sources": [{"file_path": '}</span><span className="c-amber">{'"src/itsdangerous/signer.py"'}</span><span className="c-white">{', …}]}'}</span></span><span className="code-cursor" /></div>
           </div>
         )}
 
@@ -535,11 +534,11 @@ export default function Auth({ onAuthenticated, showToast }) {
           <div className="auth-left-stats">
             <div className="auth-stat">
               <span className="auth-stat-value">6</span>
-              <span className="auth-stat-label">Languages</span>
+              <span className="auth-stat-label">AST-parsed languages</span>
             </div>
             <div className="auth-stat">
-              <span className="auth-stat-value">200+</span>
-              <span className="auth-stat-label">Files supported</span>
+              <span className="auth-stat-value">15</span>
+              <span className="auth-stat-label">File types indexed</span>
             </div>
             <div className="auth-stat">
               <span className="auth-stat-value">SSE</span>
