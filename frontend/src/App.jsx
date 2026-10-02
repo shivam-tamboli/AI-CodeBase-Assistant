@@ -7,6 +7,14 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 axios.defaults.withCredentials = true
 
+// Best human-readable message from an API error. HTTPExceptions use `detail`;
+// validation (422) and rate-limit (429) errors use the `error` envelope.
+const apiError = (err) => {
+  const data = err.response?.data
+  const field = data?.error?.details?.errors?.[0]?.message
+  return data?.detail || field?.replace(/^Value error, /, '') || data?.error?.message || err.message
+}
+
 function AuthStoryPanel() {
   const [phase, setPhase] = React.useState(0)
   const [visible, setVisible] = React.useState(false)
@@ -675,7 +683,7 @@ function App() {
       localStorage.setItem('username', authUsername)
       fetchRepositories(newToken)
     } catch (err) {
-      showToast('Login failed: ' + (err.response?.data?.detail || err.message), 'error')
+      showToast('Login failed: ' + apiError(err), 'error')
     } finally {
       setAuthLoading(false)
     }
@@ -692,7 +700,7 @@ function App() {
       localStorage.setItem('username', authUsername)
       fetchRepositories(newToken)
     } catch (err) {
-      showToast('Registration failed: ' + (err.response?.data?.detail || err.message), 'error')
+      showToast('Registration failed: ' + apiError(err), 'error')
     } finally {
       setAuthLoading(false)
     }
@@ -745,7 +753,7 @@ function App() {
       // Continue polling until indexed/failed
       pollRepoStatus(repoId, setUploadStatus, token)
     } catch (err) {
-      setUploadStatus({ type: 'error', text: 'Upload failed: ' + (err.response?.data?.detail || err.message) })
+      setUploadStatus({ type: 'error', text: 'Upload failed: ' + apiError(err) })
       setTimeout(() => setUploadStatus(null), 5000)
     } finally {
       setUploadLoading(false)
@@ -772,7 +780,7 @@ function App() {
       setSelectedRepo(repoId)
       pollRepoStatus(repoId, setImportStatus, token)
     } catch (err) {
-      setImportStatus({ type: 'error', text: 'Import failed: ' + (err.response?.data?.detail || err.response?.data?.error?.message || err.message) })
+      setImportStatus({ type: 'error', text: 'Import failed: ' + apiError(err) })
       setTimeout(() => setImportStatus(null), 6000)
     } finally {
       setImportLoading(false)
@@ -794,7 +802,7 @@ function App() {
       setReindexStatus({ type: 'loading', text: 'Re-indexing...' })
       pollRepoStatus(res.data.repository_id || selectedRepo, setReindexStatus, token)
     } catch (err) {
-      setReindexStatus({ type: 'error', text: 'Failed: ' + (err.response?.data?.detail || err.message) })
+      setReindexStatus({ type: 'error', text: 'Failed: ' + apiError(err) })
       setTimeout(() => setReindexStatus(null), 5000)
     } finally {
       setReindexLoading(false)
@@ -827,7 +835,7 @@ function App() {
       setChatHistory([])
       fetchSessions(selectedRepo)
     } catch (err) {
-      showToast('Failed to create session: ' + (err.response?.data?.detail || err.message), 'error')
+      showToast('Failed to create session: ' + apiError(err), 'error')
     }
   }
 
@@ -878,7 +886,7 @@ function App() {
         setActiveSessionId(sessionId)
         fetchSessions(selectedRepo)
       } catch (err) {
-        showToast('Could not create session: ' + (err.response?.data?.detail || err.message), 'error')
+        showToast('Could not create session: ' + apiError(err), 'error')
         return
       }
     }

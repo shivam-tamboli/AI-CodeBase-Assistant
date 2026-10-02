@@ -80,9 +80,45 @@ class TestRegister:
     async def test_register_duplicate_username_returns_400(self, test_client, mock_db):
         mock_db.users.find_one.return_value = _fake_user_doc("existing")
         r = await test_client.post("/auth/register", json={
-            "username": "existing", "password": "pass"
+            "username": "existing", "password": "password123"
         })
         assert r.status_code == 400
+        assert r.json()["detail"] == "Username already taken"
+
+    async def test_register_race_duplicate_key_returns_400(self, test_client, mock_db):
+        # Both requests passed find_one; the unique index rejects the second insert.
+        from pymongo.errors import DuplicateKeyError
+        mock_db.users.find_one.return_value = None
+        mock_db.users.insert_one.side_effect = DuplicateKeyError("E11000 duplicate key")
+        r = await test_client.post("/auth/register", json={
+            "username": "racer", "password": "password123"
+        })
+        assert r.status_code == 400
+        assert r.json()["detail"] == "Username already taken"
+
+    @pytest.mark.parametrize("username,password", [
+        ("", "password123"),
+        ("   ", "password123"),
+        ("ab", "password123"),
+        ("a" * 33, "password123"),
+        ("validname", ""),
+        ("validname", "short7!"),
+        ("validname", "        "),
+        ("validname", "a" * 73),
+        ("validname", "é" * 37),   # 37 chars but 74 bytes
+    ])
+    async def test_register_rejects_bad_credentials(self, test_client, mock_db, username, password):
+        r = await test_client.post("/auth/register", json={"username": username, "password": password})
+        assert r.status_code == 422
+        mock_db.users.insert_one.assert_not_called()
+
+    async def test_register_accepts_boundaries_and_trims_username(self, test_client, mock_db):
+        mock_db.users.find_one.return_value = None
+        r = await test_client.post("/auth/register", json={
+            "username": "  abc  ", "password": "a" * 72,
+        })
+        assert r.status_code == 201
+        assert mock_db.users.insert_one.call_args[0][0]["username"] == "abc"
 
     async def test_register_missing_fields_returns_422(self, test_client):
         r = await test_client.post("/auth/register", json={"username": "only"})
@@ -115,6 +151,50 @@ class TestLogin:
             "username": "ghost", "password": "any"
         })
         assert r.status_code == 401
+
+    async def test_login_blank_fields_rejected(self, test_client):
+        r = await test_client.post("/auth/login", json={"username": " ", "password": ""})
+        assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting on auth
+# ---------------------------------------------------------------------------
+
+class TestAuthRateLimit:
+    async def _login(self, client, xff=None):
+        headers = {"X-Forwarded-For": xff} if xff else {}
+        return await client.post("/auth/login", headers=headers,
+                                 json={"username": "ghost", "password": "whatever"})
+
+    async def test_sixth_login_in_a_minute_is_429(self, test_client, mock_db):
+        mock_db.users.find_one.return_value = None
+        codes = [(await self._login(test_client, "203.0.113.7")).status_code for _ in range(6)]
+        assert codes == [401] * 5 + [429]
+
+    async def test_spoofed_leftmost_forwarded_for_does_not_reset_limit(self, test_client, mock_db):
+        # Render appends the real client IP; whatever the client put first is ignored.
+        mock_db.users.find_one.return_value = None
+        codes = [
+            (await self._login(test_client, f"10.0.0.{i}, 203.0.113.7")).status_code
+            for i in range(6)
+        ]
+        assert codes[-1] == 429
+
+    async def test_different_clients_have_separate_buckets(self, test_client, mock_db):
+        mock_db.users.find_one.return_value = None
+        for _ in range(5):
+            await self._login(test_client, "203.0.113.7")
+        assert (await self._login(test_client, "198.51.100.9")).status_code == 401
+
+    async def test_register_is_rate_limited_too(self, test_client, mock_db):
+        mock_db.users.find_one.return_value = _fake_user_doc("taken")
+        codes = [
+            (await test_client.post("/auth/register", headers={"X-Forwarded-For": "203.0.113.8"},
+                                    json={"username": "taken", "password": "password123"})).status_code
+            for _ in range(6)
+        ]
+        assert codes == [400] * 5 + [429]
 
 
 # ---------------------------------------------------------------------------
@@ -260,9 +340,7 @@ def _fake_clone(returncode=0, stderr=b""):
 class TestGitHubImportCredentials:
     @pytest.fixture(autouse=True)
     def _isolate(self, monkeypatch):
-        from backend.middleware.rate_limiter import limiter
         from backend.main import app
-        limiter.reset()
         monkeypatch.setenv("GITHUB_TOKEN", SERVER_TOKEN)
         # ASGITransport skips lifespan, so the shared processor isn't created.
         monkeypatch.setattr(app.state, "processor", MagicMock(), raising=False)
@@ -318,3 +396,58 @@ class TestGitHubImportCredentials:
         })
         assert r.status_code == 422
         assert "X-Injected" not in r.text
+
+
+# ---------------------------------------------------------------------------
+# ZIP upload hardening
+# ---------------------------------------------------------------------------
+
+def _zip_bytes(files: dict) -> bytes:
+    import io, zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+class TestUploadHardening:
+    @pytest.fixture(autouse=True)
+    def _isolate(self, monkeypatch, tmp_path):
+        import tempfile
+        from backend.main import app
+        monkeypatch.setattr(app.state, "processor", MagicMock(), raising=False)
+        # Every mkdtemp lands under tmp_path so we can see exactly what got written.
+        self.root = tmp_path
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+        with patch("backend.api.repositories._run_ingestion", new_callable=AsyncMock):
+            yield
+
+    async def _upload(self, client, headers, filename, content):
+        return await client.post("/repositories/upload", headers=headers,
+                                 files={"file": (filename, content, "application/zip")})
+
+    async def test_traversal_filename_stays_inside_temp_dir(self, test_client, auth_headers):
+        r = await self._upload(test_client, auth_headers, "../../escaped.zip",
+                               _zip_bytes({"app.py": "print(1)"}))
+        assert r.status_code == 202
+        assert r.json()["name"] == "escaped"
+        assert not (self.root.parent / "escaped.zip").exists()
+        assert not (self.root.parent.parent / "escaped.zip").exists()
+        assert list(self.root.glob("*/escaped.zip"))  # saved under its own temp dir
+
+    async def test_oversized_upload_is_413(self, test_client, auth_headers, monkeypatch):
+        monkeypatch.setattr("backend.api.repositories.MAX_UPLOAD_BYTES", 1024)
+        r = await self._upload(test_client, auth_headers, "big.zip", b"x" * 4096)
+        assert r.status_code == 413
+
+    async def test_zip_bomb_is_413(self, test_client, auth_headers, monkeypatch):
+        monkeypatch.setattr("backend.api.repositories.MAX_EXTRACTED_BYTES", 10_000)
+        r = await self._upload(test_client, auth_headers, "bomb.zip",
+                               _zip_bytes({"zeros.txt": "0" * 1_000_000}))
+        assert r.status_code == 413
+        assert not list(self.root.glob("*/zeros.txt"))  # never extracted
+
+    async def test_not_a_zip_is_400(self, test_client, auth_headers):
+        r = await self._upload(test_client, auth_headers, "fake.zip", b"definitely not a zip")
+        assert r.status_code == 400

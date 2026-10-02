@@ -76,6 +76,13 @@ class _MockDatabase:
         return self._get(name)
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """Limiter state is process-global; without this, tests trip each other's limits."""
+    from backend.middleware.rate_limiter import limiter
+    limiter.reset()
+
+
 @pytest.fixture
 def mock_db():
     """Mock DB whose collections are pre-wired with async mocks.

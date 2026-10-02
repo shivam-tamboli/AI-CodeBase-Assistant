@@ -12,7 +12,24 @@ from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 from functools import wraps
 
-limiter = Limiter(key_func=get_remote_address)
+def client_ip(request: Request) -> str:
+    """Rate-limit key: the real client address, even behind Render's proxy.
+
+    request.client.host is the proxy's address in production (uvicorn only
+    trusts forwarded headers from 127.0.0.1), which would make every limit
+    global. Render appends the connecting client's IP to X-Forwarded-For and
+    keeps whatever the client sent, so the rightmost entry is the trustworthy
+    one — the leftmost can be spoofed.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        last = forwarded.split(",")[-1].strip()
+        if last:
+            return last
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=client_ip)
 
 
 def rate_limit(limit_string: str):

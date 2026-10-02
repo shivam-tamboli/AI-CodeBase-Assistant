@@ -186,6 +186,8 @@ Full reference of all supported environment variables. See [`backend/.env.exampl
 | `ANTHROPIC_API_KEY` | No | — | Required when `LLM_PROVIDER=anthropic` |
 | `COHERE_API_KEY` | No | — | Enables Cohere cross-encoder re-ranking |
 | `ENABLE_CHUNK_SUMMARIES` | No | `false` | Generate LLM summaries per chunk at index time |
+| `MAX_UPLOAD_MB` | No | `50` | Largest ZIP accepted by upload/reindex (HTTP 413 above this) |
+| `MAX_EXTRACTED_MB` | No | `200` | Largest total uncompressed size a ZIP may expand to (zip-bomb guard) |
 | `ENVIRONMENT` | No | `development` | Set to `production` on Render — makes the refresh-token cookie `secure` and `samesite=none` so it works cross-origin |
 
 ---
