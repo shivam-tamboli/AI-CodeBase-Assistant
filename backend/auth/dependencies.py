@@ -26,7 +26,7 @@ async def get_current_user(
         credentials: Bearer token from Authorization header
 
     Returns:
-        User payload from JWT
+        {"user_id": <sub claim>}
 
     Raises:
         HTTPException: 401 if token is missing or invalid
@@ -55,11 +55,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return {
-        "user_id": user_id,
-        "email": payload.get("email"),
-        "role": payload.get("role", "user"),
-    }
+    return {"user_id": user_id}
 
 
 async def get_optional_user(
@@ -75,7 +71,7 @@ async def get_optional_user(
         credentials: Optional Bearer token
 
     Returns:
-        User payload if valid token, None otherwise
+        {"user_id": <sub claim>} if the token is valid, None otherwise
     """
     if credentials is None:
         return None
@@ -85,8 +81,4 @@ async def get_optional_user(
     if payload is None:
         return None
 
-    return {
-        "user_id": payload.get("sub"),
-        "email": payload.get("email"),
-        "role": payload.get("role", "user"),
-    }
+    return {"user_id": payload.get("sub")}

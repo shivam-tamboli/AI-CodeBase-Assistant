@@ -8,7 +8,7 @@ Phase 12: Chat Memory & Session Management
 
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 
 from backend.database import Database
@@ -55,8 +55,8 @@ class ChatService:
             "user_id": user_id,
             "repository_id": repository_id,
             "messages": [],
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
         }
 
         result = await collection.insert_one(session_doc)
@@ -99,7 +99,7 @@ class ChatService:
         message = {
             "role": role,
             "content": content,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "tokens": tokens
         }
 
@@ -107,7 +107,7 @@ class ChatService:
             {"_id": ObjectId(session_id)},
             {
                 "$push": {"messages": message},
-                "$set": {"updated_at": datetime.utcnow()}
+                "$set": {"updated_at": datetime.now(timezone.utc)}
             }
         )
 

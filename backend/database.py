@@ -1,5 +1,6 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
+from datetime import timezone
 import os
 import logging
 
@@ -23,7 +24,9 @@ class Database:
                 else:
                     connection_string += "?ssl=true&tlsAllowInvalidCertificates=true"
             
-            cls.client = AsyncIOMotorClient(connection_string)
+            # tz_aware: datetimes come back as aware UTC, so they serialize with an
+            # offset and the browser doesn't mistake them for local time.
+            cls.client = AsyncIOMotorClient(connection_string, tz_aware=True, tzinfo=timezone.utc)
             
             if "/ragdb?" in connection_string:
                 cls._database_name = "ragdb"
