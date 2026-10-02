@@ -272,11 +272,11 @@ See [docs/provider-architecture.md](docs/provider-architecture.md) for how to ad
 
 ```mermaid
 flowchart TD
-    A([POST /repositories/import\n url · name · branch]) --> B{Validate GitHub URL\nregex pattern}
+    A([POST /repositories/import\n url · name · branch · github_token?]) --> B{Validate GitHub URL\nregex pattern}
     B -->|invalid| Z1[400 Bad Request]
-    B -->|valid| C{GITHUB_TOKEN set?}
-    C -->|Yes| D[Inject token into clone URL\nhttps://token@github.com/...]
-    C -->|No| E[Use public URL]
+    B -->|valid| C{User supplied\ngithub_token?}
+    C -->|Yes| D[Pass user's token as auth header\nvia GIT_CONFIG_* env vars]
+    C -->|No| E[Anonymous clone\ncredential helpers disabled]
     D --> F
     E --> F["git clone --depth 1\n(--branch if specified)\n120s timeout"]
     F -->|timeout| Z2[422 Clone timed out]
@@ -289,8 +289,9 @@ flowchart TD
 ```
 
 **Security details:**
-- The GitHub token is injected into the clone URL only in memory: `https://<token>@github.com/owner/repo`. It is never logged or stored.
-- If the clone fails, `token` is replaced with `***` in the stderr output before returning the error to the client.
+- The server never uses its own GitHub credentials for imports. Public repos clone anonymously, with git credential helpers blanked and terminal prompts off, so nothing on the host can authenticate the clone.
+- Private repos require the caller's own token (`github_token` in the request body). It is passed to git as an `Authorization` header through `GIT_CONFIG_*` environment variables, so it never appears in the process arguments, the clone URL, or the clone's `.git/config`. It is not stored or logged.
+- If the clone fails, the token is replaced with `***` in the stderr output before returning the error to the client.
 - The `source_url` stored in the database is the clean `https://github.com/owner/repo` form — no credentials.
 
 ---

@@ -1,7 +1,10 @@
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, SecretStr, field_serializer, field_validator
 from typing import Optional, Literal
 from datetime import datetime
 from bson import ObjectId
+import re
+
+_GITHUB_TOKEN_RE = re.compile(r"^[A-Za-z0-9_]{20,255}$")
 
 
 class RepositoryBase(BaseModel):
@@ -25,6 +28,25 @@ class RepositoryImport(BaseModel):
         None,
         description="Branch to clone (defaults to repository HEAD)"
     )
+    # SecretStr keeps the token out of reprs and validation-error logs.
+    github_token: Optional[SecretStr] = Field(
+        None,
+        description="The caller's own GitHub token, required only for private repos. Never stored."
+    )
+
+    @field_validator("github_token")
+    @classmethod
+    def _check_token_shape(cls, v: Optional[SecretStr]) -> Optional[SecretStr]:
+        if v is None:
+            return None
+        raw = v.get_secret_value().strip()
+        if not raw:
+            return None
+        # GitHub tokens are [A-Za-z0-9_] only; rejecting anything else also
+        # rules out newline/header injection when the token becomes an HTTP header.
+        if not _GITHUB_TOKEN_RE.match(raw):
+            raise ValueError("github_token is not a valid GitHub token")
+        return SecretStr(raw)
 
 
 class RepositoryUpdate(BaseModel):

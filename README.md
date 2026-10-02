@@ -130,7 +130,6 @@ No frontend env vars needed for local dev — defaults to `http://localhost:8000
 | `LLM_MODEL` | No | `gpt-4o-mini` | Model name for the selected provider |
 | `ANTHROPIC_API_KEY` | No | — | Required when `LLM_PROVIDER=anthropic` |
 | `COHERE_API_KEY` | No | — | Enables Cohere re-ranking; omit for BM25 fallback |
-| `GITHUB_TOKEN` | No | — | For importing private repositories |
 | `ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated CORS origins |
 | `ENVIRONMENT` | No | `development` | Set to `production` on Render — enables secure httpOnly cookies |
 
@@ -247,7 +246,7 @@ Start:  uvicorn backend.main:app --host 0.0.0.0 --port $PORT
 
 ## Future improvements
 
-- **GitHub OAuth** — private repos currently use a single `GITHUB_TOKEN`. Proper per-user OAuth would scope access correctly.
+- **GitHub OAuth** — private repos currently need the user to paste a personal access token on each import. Per-user OAuth would make this seamless.
 - **Webhook re-indexing** — re-indexing is triggered manually. A GitHub App webhook could handle it automatically on push.
 - **Cross-repo search** — queries are scoped to one repo. Spanning multiple repos (e.g. "how does service A call service B?") would require a different retrieval strategy.
 - **Docker Compose** — local setup needs separate terminal windows and Atlas. A Compose file would simplify it.

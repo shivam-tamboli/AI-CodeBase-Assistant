@@ -12,6 +12,7 @@ from typing import List, Optional
 from datetime import datetime
 from bson import ObjectId
 import zipfile
+import base64
 import io
 import os
 import shutil
@@ -632,6 +633,40 @@ _GITHUB_URL_RE = re.compile(
 )
 
 
+def _git_clone_env(user_token: Optional[str]) -> dict:
+    """Environment for `git clone` that can only ever use the caller's credentials.
+
+    - credential.helper is blanked so a helper on the host (keychain, store)
+      can't silently authenticate the clone.
+    - GIT_TERMINAL_PROMPT=0 makes a private repo fail fast instead of hanging.
+    - The user's token is passed as an auth header via GIT_CONFIG_* env vars,
+      which keeps it out of argv, the clone URL, and the clone's .git/config.
+    """
+    env = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        # An empty helper value resets any helpers inherited from system/global config.
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "credential.helper",
+        "GIT_CONFIG_VALUE_0": "",
+    }
+    if user_token:
+        basic = base64.b64encode(f"x-access-token:{user_token}".encode()).decode()
+        env.update({
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_1": "http.https://github.com/.extraheader",
+            "GIT_CONFIG_VALUE_1": f"Authorization: Basic {basic}",
+        })
+    return env
+
+
+def _scrub_secret(text: str, secret: Optional[str]) -> str:
+    if not secret:
+        return text
+    basic = base64.b64encode(f"x-access-token:{secret}".encode()).decode()
+    return text.replace(secret, "***").replace(basic, "***")
+
+
 @router.post("/import", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("5/minute")
 async def import_repository(
@@ -647,7 +682,9 @@ async def import_repository(
     background task and returns 202. Poll GET /repositories/{id}/status
     to track progress.
 
-    Private repositories require GITHUB_TOKEN to be configured.
+    Public repos clone anonymously. Private repos need the caller's own
+    token in `github_token`; the server's GITHUB_TOKEN is never used here,
+    otherwise any registered user could read whatever that token can.
     Rate limit: 5 requests per minute (clone is network-bound).
     """
     url = payload.url.strip().rstrip("/")
@@ -660,13 +697,7 @@ async def import_repository(
             detail="URL must be a GitHub repository (https://github.com/owner/repo)"
         )
 
-    # Inject GITHUB_TOKEN for private repository access.
-    # The token is embedded in the URL so it is never logged by git output.
-    github_token = os.getenv("GITHUB_TOKEN", "").strip()
-    clone_url = url
-    if github_token:
-        # https://github.com/owner/repo → https://<token>@github.com/owner/repo
-        clone_url = url.replace("https://", f"https://{github_token}@", 1)
+    user_token = payload.github_token.get_secret_value() if payload.github_token else None
 
     repo_slug = url.split("/")[-1]
     repo_name = payload.name or repo_slug
@@ -681,12 +712,13 @@ async def import_repository(
         clone_cmd = ["git", "clone", "--depth", "1"]
         if payload.branch:
             clone_cmd += ["--branch", payload.branch]
-        clone_cmd += [clone_url, clone_path]
+        clone_cmd += ["--", url, clone_path]
 
         proc = await asyncio.create_subprocess_exec(
             *clone_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=_git_clone_env(user_token),
         )
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
@@ -700,10 +732,21 @@ async def import_repository(
 
         if proc.returncode != 0:
             # Scrub the token from stderr before returning it to the client.
-            error_msg = stderr.decode(errors="replace").strip()
-            if github_token:
-                error_msg = error_msg.replace(github_token, "***")
+            error_msg = _scrub_secret(stderr.decode(errors="replace").strip(), user_token)
             shutil.rmtree(temp_dir, ignore_errors=True)
+            auth_failed = any(m in error_msg for m in (
+                "could not read Username", "Authentication failed", "Repository not found",
+            ))
+            if auth_failed:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "Clone failed: the token was rejected or can't access this repository."
+                        if user_token else
+                        "Clone failed: repository not found or private. "
+                        "To import a private repo, provide your own GitHub access token."
+                    ),
+                )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Clone failed: {error_msg}"
